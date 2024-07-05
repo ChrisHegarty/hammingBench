@@ -4,7 +4,7 @@
 Contrary to intuition `Integer::bitcount` performs better that `Long::bitcount`
 on the same underlying data, on AArch64.
 
-## Conclusion
+## Summary
 
 `Long::bitcount` is not vectorized, while `Integer::bitcount` is. This is a
 counterintuitive and effectively an implementation bug in Hotspot.
