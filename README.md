@@ -11,6 +11,20 @@ counterintuitive and effectively an implementation bug in Hotspot.
 
 TODO: Double check and verify that all is fine on x64.
 
+### Background
+
+We ran into this anomaly when implementing hamming distance between two bit
+vectors. The values for each bit vector are stored in a `byte[]`. We then chose
+to view the vector data as `long`, via `MethodHandles::byteArrayViewVarHandle(long[].class, ..)`,
+in order to perform an xor between the vectors and count the set bits.
+Surprisingly, implementing the same but using `MethodHandles::byteArrayViewVarHandle(int[].class, ..)`
+performs significantly better on ARM.
+
+There may be more going on between our implementation of hamming distance and
+plain use of `bitCount`, but it's likely that this is the root cause for the
+performance differential that we see. Additionally, it is useful to analyse
+the plain use of `bitCount` independently (of our hamming distance impl).
+
 ### Benchmark
 
 The benchmark, `BitCountBenchmark`, measures _throughput_ in seconds, so bigger
