@@ -2,13 +2,14 @@
 
 
 Contrary to intuition `Integer::bitcount` performs better that `Long::bitcount`
-on the same underlying data, on AArch64.
+on the same underlying data on AArch64.
 
 ## Summary
 
-`Long::bitcount` is not vectorized, while `Integer::bitcount` is. This is a
-counterintuitive and effectively an implementation bug in the Hotspot C2 
-compiler for AArch64.
+The issue is that`Long::bitcount` is not vectorized, while `Integer::bitcount`
+uses NEON SIMD instruction to operate on groups of 4 32-bit ints at a time.
+This is a counterintuitive and effectively an implementation bug in the 
+Hotspot C2 compiler for AArch64.
 
 Linux x64 shows no such issue - performance of int and long bit counts is
 identical.
@@ -127,6 +128,11 @@ values at a time, which covers 512 bits per loop iteration.
 on 32 32-bit int values at a time - effectively loading 4 32-bit int values into
 a single 128-bit register. And it does this 8 times, which covers 1024 bits per
 loop iteration.
+
+This int variant vectorizes (uses NEON SIMD) when it unrolls, whereas the long
+variant does not. The result is that the unrolled int variant processes twice as
+many values per iteration of the unrolled loop, when compared to that of the
+long variant.
 
 ```
  ;; B12: #	out( B11 B13 ) <- in( B15 B11 ) Loop( B12-B11 inner main of N92 strip mined) Freq: 9.80518e+06
