@@ -7,9 +7,11 @@ on the same underlying data, on AArch64.
 ## Summary
 
 `Long::bitcount` is not vectorized, while `Integer::bitcount` is. This is a
-counterintuitive and effectively an implementation bug in Hotspot.
+counterintuitive and effectively an implementation bug in the Hotspot C2 
+compiler for AArch64.
 
-TODO: Double check and verify that all is fine on x64.
+Linux x64 shows no such issue - performance of int and long bit counts is
+identical.
 
 ### Background
 
@@ -29,6 +31,15 @@ the plain use of `bitCount` independently (of our hamming distance impl).
 
 The benchmark, `BitCountBenchmark`, measures _throughput_ in seconds, so bigger
 numbers are better. 
+
+#### Linux - x64 Skylake
+```
+davekim$ /home/chegar/binaries/jdk-22.0.1/bin/java -jar target/benchmarks.jar 
+...
+Benchmark                       (size)  (times)   Mode  Cnt   Score   Error  Units
+BitCountBenchmark.bitCountInt     1024   100000  thrpt    5  47.019 ± 0.157  ops/s
+BitCountBenchmark.bitCountLong    1024   100000  thrpt    5  47.511 ± 0.263  ops/s
+```
 
 #### Mac M2 - AArch64
 ```
