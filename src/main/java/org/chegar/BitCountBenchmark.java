@@ -31,21 +31,6 @@ public class BitCountBenchmark {
     long[][] la;
     int[][] ia;
 
-    public static void main(String... args) {
-        BitCountBenchmark bench = new BitCountBenchmark();
-        bench.setup();
-
-        int res = 0;
-        if (args.length == 1 && args[0].equals("-int")) {
-            System.out.println("running int ...");
-            res += bench.bitCountInt();
-        } else {
-            System.out.println("running long ...");
-            res += bench.bitCountLong();
-        }
-        System.out.println(res);
-    }
-
     @Setup
     public void setup() {
         Random rand = new Random();
@@ -105,5 +90,20 @@ public class BitCountBenchmark {
             distance += c;
         }
         return distance;
+    }
+
+    public static void main(String... args) {
+        BitCountBenchmark bench = new BitCountBenchmark();
+        bench.setup();
+
+        int res = 0;
+        if (args.length == 1 && args[0].equals("-int")) {
+            System.out.println("running int ...");
+            res += bench.bitCountInt();
+        } else {
+            System.out.println("running long ...");
+            res += bench.bitCountLong();
+        }
+        System.out.println(res);
     }
 }
