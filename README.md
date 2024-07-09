@@ -1,4 +1,4 @@
-
+JDK bug tracking this issue: https://bugs.openjdk.org/browse/JDK-8336000
 
 
 Contrary to intuition `Integer::bitcount` performs better that `Long::bitcount`
