@@ -44,7 +44,7 @@
         <!--
             Java source/target to use for compilation.
           -->
-        <javac.target>1.8</javac.target>
+        <javac.target>22</javac.target>
 
         <!--
             Name of the benchmark Uber-JAR to generate.
@@ -62,6 +62,7 @@
                     <compilerVersion>${javac.target}</compilerVersion>
                     <source>${javac.target}</source>
                     <target>${javac.target}</target>
+                    <compilerArgument>--add-modules=jdk.incubator.vector</compilerArgument>
                 </configuration>
             </plugin>
             <plugin>
