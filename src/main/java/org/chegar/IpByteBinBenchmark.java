@@ -87,6 +87,11 @@ public class IpByteBinBenchmark {
     }
 
     @Benchmark
+    public long ipByteBinByteLongBench() {
+        return ipByteBinByteLong(qBytes, dBytes);
+    }
+
+    @Benchmark
     public long ipByteBinConstLongBench() {
         return ipByteBinConst(qLong, dLong);
     }
@@ -138,6 +143,26 @@ public class IpByteBinBenchmark {
             ret += subRet << i;
         }
         return ret;
+    }
+
+    public static long ipByteBinByteLong(byte[] q, byte[] d) {
+      long ret = 0;
+      int size = d.length;
+      for (int i = 0; i < B_QUERY; i++) {
+        int r = 0;
+        long subRet = 0;
+        for (final int upperBound = d.length & -Long.BYTES; r < upperBound; r += Long.BYTES) {
+          subRet +=
+              Long.bitCount(
+                  (long) BitUtil.VH_NATIVE_LONG.get(q, i * size + r)
+                      & (long) BitUtil.VH_NATIVE_LONG.get(d, r));
+        }
+        for (; r < d.length; r++) {
+          subRet += Long.bitCount((q[i * size + r] & d[i]) & 0xFF);
+        }
+        ret += subRet << i;
+      }
+      return ret;
     }
 
     // Using constants, for B_QUERY and B, give 2x perf
@@ -284,6 +309,9 @@ public class IpByteBinBenchmark {
         }
         if (ipByteBinByteBench() != expected) {
             throw new AssertionError("expected:" + expected + " != ipByteBinByteBench:" + ipByteBinByteBench());
+        }
+        if (ipByteBinByteLongBench() != expected) {
+            throw new AssertionError("expected:" + expected + " != ipByteBinByteLongBench:" + ipByteBinByteLongBench());
         }
     }
 }
