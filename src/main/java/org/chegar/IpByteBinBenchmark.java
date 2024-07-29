@@ -110,8 +110,8 @@ public class IpByteBinBenchmark {
     }
 
     @Benchmark
-    public long ipByteBinConstUnrolled2LongBench() {
-        return ipByteBinConstUnrolled2(qLong, dLong);
+    public long ipByteBinConstUnrolledBQueryLongBench() {
+        return ipByteBinConstUnrolledBQuery(qLong, dLong);
     }
 
     @Benchmark
@@ -289,8 +289,8 @@ public class IpByteBinBenchmark {
         return acc0 + acc1 + acc2 + acc3;
     }
 
-    static long ipByteBinConstUnrolled2(long[] q, long[] d) {
-        long sum0 = 0, sum1 = 0, sum2 = 0, sum3 = 0;
+    static long ipByteBinConstUnrolledBQuery(long[] q, long[] d) {
+        int sum0 = 0, sum1 = 0, sum2 = 0, sum3 = 0;
         for (int i = 0; i < 6; i++) {
             sum0 += Long.bitCount(q[i] & d[i]);
             sum1 += Long.bitCount(q[6 + i] & d[i]);
@@ -411,8 +411,8 @@ public class IpByteBinBenchmark {
         if (ipByteBinPanByteBenchWideCount() != expected) {
             throw new AssertionError("expected:" + expected + " != ipByteBinPanByteBenchWideCount:" + ipByteBinPanByteBenchWideCount());
         }
-        if (ipByteBinConstUnrolled2LongBench() != expected) {
-            throw new AssertionError("expected:" + expected + " != ipByteBinConstUnrolled2LongBench:" + ipByteBinConstUnrolled2LongBench());
+        if (ipByteBinConstUnrolledBQueryLongBench() != expected) {
+            throw new AssertionError("expected:" + expected + " != ipByteBinConstUnrolledBQueryLongBench:" + ipByteBinConstUnrolledBQueryLongBench());
         }
     }
 }
