@@ -110,6 +110,11 @@ public class IpByteBinBenchmark {
     }
 
     @Benchmark
+    public long ipByteBinConstUnrolled2LongBench() {
+        return ipByteBinConstUnrolled2(qLong, dLong);
+    }
+
+    @Benchmark
     public long ipByteBinPanByteBench() {
         return ipByteBinBytePan(qBytes, dBytes);
     }
@@ -284,6 +289,17 @@ public class IpByteBinBenchmark {
         return acc0 + acc1 + acc2 + acc3;
     }
 
+    static long ipByteBinConstUnrolled2(long[] q, long[] d) {
+        long sum0 = 0, sum1 = 0, sum2 = 0, sum3 = 0;
+        for (int i = 0; i < 6; i++) {
+            sum0 += Long.bitCount(q[i] & d[i]);
+            sum1 += Long.bitCount(q[6 + i] & d[i]);
+            sum2 += Long.bitCount(q[2 * 6 + i] & d[i]);
+            sum3 += Long.bitCount(q[3 * 6 + i] & d[i]);
+        }
+        return (sum0) + (sum1 << 1) + (sum2 << 2) + (sum3 << 3);
+    }
+
     static final VectorSpecies<Byte> BYTE_SPECIES = ByteVector.SPECIES_PREFERRED;
 
     public static long ipByteBinBytePan(byte[] q, byte[] d) {
@@ -394,6 +410,9 @@ public class IpByteBinBenchmark {
         }
         if (ipByteBinPanByteBenchWideCount() != expected) {
             throw new AssertionError("expected:" + expected + " != ipByteBinPanByteBenchWideCount:" + ipByteBinPanByteBenchWideCount());
+        }
+        if (ipByteBinConstUnrolled2LongBench() != expected) {
+            throw new AssertionError("expected:" + expected + " != ipByteBinConstUnrolled2LongBench:" + ipByteBinConstUnrolled2LongBench());
         }
     }
 }
