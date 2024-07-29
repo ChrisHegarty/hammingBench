@@ -359,6 +359,12 @@ public class IpByteBinBenchmark {
             vres3 = vres3.lanewise(VectorOperators.BIT_COUNT);
             subRet3 += vres3.reduceLanes(VectorOperators.ADD);
         }
+        for (; r < d.length; r++) {
+            subRet0 += Integer.bitCount((q[r] & d[r]) & 0xFF);
+            subRet1 += Integer.bitCount((q[r + d.length] & d[r]) & 0xFF);
+            subRet2 += Integer.bitCount((q[r + 2 * d.length] & d[r]) & 0xFF);
+            subRet3 += Integer.bitCount((q[r + 3 * d.length] & d[r]) & 0xFF);
+        }
         ret += subRet0;
         ret += subRet1 << 1;
         ret += subRet2 << 2;
