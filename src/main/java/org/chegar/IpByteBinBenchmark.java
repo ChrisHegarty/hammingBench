@@ -430,6 +430,133 @@ public class IpByteBinBenchmark {
     }
 
     @Benchmark
+    public long ipbb_byteArraysPanamaStrideAsLongUnrolledBench() {
+        return ipbb_byteArraysPanamaStrideAsLongUnrolled(qBytes, dBytes);
+    }
+
+    public static long ipbb_byteArraysPanamaStrideAsLongUnrolled(byte[] q, byte[] d) {
+        long ret = 0;
+        long subRet0 = 0;
+        long subRet1 = 0;
+        long subRet2 = 0;
+        long subRet3 = 0;
+        int limit = ByteVector.SPECIES_PREFERRED.loopBound(d.length);
+        int r = 0;
+        LongVector sum0 = LongVector.zero(LongVector.SPECIES_PREFERRED);
+        LongVector sum1 = LongVector.zero(LongVector.SPECIES_PREFERRED);
+        LongVector sum2 = LongVector.zero(LongVector.SPECIES_PREFERRED);
+        LongVector sum3 = LongVector.zero(LongVector.SPECIES_PREFERRED);
+
+        for (; r < limit; r += ByteVector.SPECIES_PREFERRED.length()) {
+            LongVector vq0 = ByteVector.fromArray(ByteVector.SPECIES_PREFERRED, q, r).reinterpretAsLongs();
+            LongVector vq1 = ByteVector.fromArray(ByteVector.SPECIES_PREFERRED, q, r + d.length).reinterpretAsLongs();
+            LongVector vq2 = ByteVector.fromArray(ByteVector.SPECIES_PREFERRED, q, r + d.length * 2).reinterpretAsLongs();
+            LongVector vq3 = ByteVector.fromArray(ByteVector.SPECIES_PREFERRED, q, r + d.length * 3).reinterpretAsLongs();
+            LongVector vd = ByteVector.fromArray(ByteVector.SPECIES_PREFERRED, d, r).reinterpretAsLongs();
+            LongVector vres0 = vq0.and(vd).lanewise(VectorOperators.BIT_COUNT);
+            LongVector vres1 = vq1.and(vd).lanewise(VectorOperators.BIT_COUNT);
+            LongVector vres2 = vq2.and(vd).lanewise(VectorOperators.BIT_COUNT);
+            LongVector vres3 = vq3.and(vd).lanewise(VectorOperators.BIT_COUNT);
+            sum0 = sum0.add(vres0);
+            sum1 = sum1.add(vres1);
+            sum2 = sum2.add(vres2);
+            sum3 = sum3.add(vres3);
+        }
+        subRet0 += sum0.reduceLanes(VectorOperators.ADD);
+        subRet1 += sum1.reduceLanes(VectorOperators.ADD);
+        subRet2 += sum2.reduceLanes(VectorOperators.ADD);
+        subRet3 += sum3.reduceLanes(VectorOperators.ADD);
+        // tail as ints
+        for (; r < d.length-Integer.BYTES; r+=Integer.BYTES) {
+            subRet0 += Integer.bitCount((int) BitUtil.VH_NATIVE_INT.get(q, r) & (int) BitUtil.VH_NATIVE_INT.get(d, r));
+            subRet1 += Integer.bitCount((int) BitUtil.VH_NATIVE_INT.get(q, r + d.length) & (int) BitUtil.VH_NATIVE_INT.get(d, r));
+            subRet2 += Integer.bitCount((int) BitUtil.VH_NATIVE_INT.get(q, r + 2 * d.length) & (int) BitUtil.VH_NATIVE_INT.get(d, r));
+            subRet3 += Integer.bitCount((int) BitUtil.VH_NATIVE_INT.get(q, r + 3 * d.length) & (int) BitUtil.VH_NATIVE_INT.get(d, r));
+        }
+        // tail as bytes
+        for (; r < d.length; r++) {
+            subRet0 += Integer.bitCount((q[r] & d[r]) & 0xFF);
+            subRet1 += Integer.bitCount((q[r + d.length] & d[r]) & 0xFF);
+            subRet2 += Integer.bitCount((q[r + 2 * d.length] & d[r]) & 0xFF);
+            subRet3 += Integer.bitCount((q[r + 3 * d.length] & d[r]) & 0xFF);
+        }
+        ret += subRet0;
+        ret += subRet1 << 1;
+        ret += subRet2 << 2;
+        ret += subRet3 << 3;
+        return ret;
+    }
+
+    @Benchmark
+    public long ipbb_byteArraysPanamaStrideAsShortUnrolledBench() {
+        return ipbb_byteArraysPanamaStrideAsShortUnrolled128(qBytes, dBytes);
+    }
+
+    public static long ipbb_byteArraysPanamaStrideAsShortUnrolled128(byte[] q, byte[] d) {
+        long ret = 0;
+        long subRet0 = 0;
+        long subRet1 = 0;
+        long subRet2 = 0;
+        long subRet3 = 0;
+
+        final int limit = BYTE_128_SPECIES.loopBound(d.length);
+        // iterate in chunks of 256 bytes to ensure we don't overflow the accumulator (256bytes/16lanes=16itrs)
+        for (int j =0; j < limit; j += 256) {
+            ByteVector acc0 = ByteVector.zero(BYTE_128_SPECIES);
+            ByteVector acc1 = ByteVector.zero(BYTE_128_SPECIES);
+            ByteVector acc2 = ByteVector.zero(BYTE_128_SPECIES);
+            ByteVector acc3 = ByteVector.zero(BYTE_128_SPECIES);
+            int innerLimit = Math.min(limit - j, 256);
+            for (int k = 0; k < innerLimit; k += BYTE_128_SPECIES.length()) {
+                ByteVector vd = ByteVector.fromArray(BYTE_128_SPECIES, d, j + k);
+                ByteVector vq0 = ByteVector.fromArray(BYTE_128_SPECIES, q, j + k);
+                ByteVector vq1 = ByteVector.fromArray(BYTE_128_SPECIES, q, j + k + d.length);
+                ByteVector vq2 = ByteVector.fromArray(BYTE_128_SPECIES, q, j + k + 2 * d.length);
+                ByteVector vq3 = ByteVector.fromArray(BYTE_128_SPECIES, q, j + k + 3 * d.length);
+                ByteVector vres0 = vq0.and(vd);
+                ByteVector vres1 = vq1.and(vd);
+                ByteVector vres2 = vq2.and(vd);
+                ByteVector vres3 = vq3.and(vd);
+                vres0 = vres0.lanewise(VectorOperators.BIT_COUNT);
+                vres1 = vres1.lanewise(VectorOperators.BIT_COUNT);
+                vres2 = vres2.lanewise(VectorOperators.BIT_COUNT);
+                vres3 = vres3.lanewise(VectorOperators.BIT_COUNT);
+                acc0 = acc0.add(vres0);
+                acc1 = acc1.add(vres1);
+                acc2 = acc2.add(vres2);
+                acc3 = acc3.add(vres3);
+            }
+            ShortVector sumShort1 = acc0.reinterpretAsShorts().and((short) 0xFF);
+            ShortVector sumShort2 = acc0.reinterpretAsShorts().lanewise(VectorOperators.LSHR, 8);
+            subRet0 += sumShort1.add(sumShort2).reduceLanes(VectorOperators.ADD);
+
+            sumShort1 = acc1.reinterpretAsShorts().and((short) 0xFF);
+            sumShort2 = acc1.reinterpretAsShorts().lanewise(VectorOperators.LSHR, 8);
+            subRet1 += sumShort1.add(sumShort2).reduceLanes(VectorOperators.ADD);
+
+            sumShort1 = acc2.reinterpretAsShorts().and((short) 0xFF);
+            sumShort2 = acc2.reinterpretAsShorts().lanewise(VectorOperators.LSHR, 8);
+            subRet2 += sumShort1.add(sumShort2).reduceLanes(VectorOperators.ADD);
+
+            sumShort1 = acc3.reinterpretAsShorts().and((short) 0xFF);
+            sumShort2 = acc3.reinterpretAsShorts().lanewise(VectorOperators.LSHR, 8);
+            subRet3 += sumShort1.add(sumShort2).reduceLanes(VectorOperators.ADD);
+        }
+        // tail as bytes
+        for (int r = limit; r < d.length; r++) {
+            subRet0 += Integer.bitCount((q[r] & d[r]) & 0xFF);
+            subRet1 += Integer.bitCount((q[r + d.length] & d[r]) & 0xFF);
+            subRet2 += Integer.bitCount((q[r + 2 * d.length] & d[r]) & 0xFF);
+            subRet3 += Integer.bitCount((q[r + 3 * d.length] & d[r]) & 0xFF);
+        }
+        ret += subRet0;
+        ret += subRet1 << 1;
+        ret += subRet2 << 2;
+        ret += subRet3 << 3;
+        return ret;
+    }
+
+    @Benchmark
     public long ipbb_byteArraysPanamaStrideAsShortBench() {
         return ipbb_byteArraysPanamaStrideAsShort128(qBytes, dBytes);
     }
@@ -613,6 +740,12 @@ public class IpByteBinBenchmark {
         }
         if (ipbb_BytePanWideCountBench() != expected) {
             throw new AssertionError("expected:" + expected + " != ipbb_BytePanWideCountBench:" + ipbb_BytePanWideCountBench());
+        }
+        if (ipbb_byteArraysPanamaStrideAsLongUnrolledBench() != expected) {
+            throw new AssertionError("expected:" + expected + " != ipbb_byteArraysPanamaStrideAsLongUnrolledBench:" + ipbb_byteArraysPanamaStrideAsLongUnrolledBench());
+        }
+        if (ipbb_byteArraysPanamaStrideAsShortUnrolledBench() != expected) {
+            throw new AssertionError("expected:" + expected + " != ipbb_byteArraysPanamaStrideAsShortUnrolledBench:" + ipbb_byteArraysPanamaStrideAsShortUnrolledBench());
         }
     }
 }
