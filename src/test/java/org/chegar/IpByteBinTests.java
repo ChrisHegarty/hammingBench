@@ -1,10 +1,14 @@
 package org.chegar;
 
 import org.junit.jupiter.api.RepeatedTest;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.MethodSource;
 
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 import java.util.Arrays;
+import java.util.List;
 import java.util.Random;
 import java.util.stream.Stream;
 
@@ -26,66 +30,66 @@ public class IpByteBinTests {
 
     @ParameterizedTest
     @MethodSource("dimsProvider")
-    public void testRandom(int dims) {
+    public void testRandom(int dims) throws Exception {
         for (int i = 0; i < 100; i++) {
             final int baSize = dims / Byte.SIZE;
             byte[] d = randomByteArray(baSize);
             byte[] q = randomByteArray(d.length << 2);
             long expected = scalarIpByteBin(q, d);
-            assertEquals(expected, ipbb_byteArraysPanamaStrideAsShort128(q, d));
-            assertEquals(expected, ipbb_byteArraysScalarStrideAsInt(q, d));
-            assertEquals(expected, ipbb_byteArraysPanama(q, d));
-            assertEquals(expected, ipbb_byteArraysPanama2(q, d));
-            //assertEquals(expected, ipByteBinBytePanWags(q, d));
+
+            for (Method method : getIpByteBinMethods()) {
+                System.out.println("Testing with:" + method);
+                assertEquals(expected, method.invoke(null, q, d), "Testing with:" + method);
+            }
         }
     }
 
     @ParameterizedTest
     @MethodSource("dimsProvider")
-    public void testMaxValue(int dims) {
+    public void testMaxValue(int dims) throws Exception {
         final int baSize = dims / Byte.SIZE;
         byte[] d = new byte[baSize];
         byte[] q = new byte[d.length << 2];
         Arrays.fill(d, Byte.MAX_VALUE);
         Arrays.fill(q, Byte.MAX_VALUE);
         long expected = scalarIpByteBin(q, d);
-        assertEquals(expected, ipbb_byteArraysPanamaStrideAsShort128(q, d));
-        assertEquals(expected, ipbb_byteArraysScalarStrideAsInt(q, d));
-        assertEquals(expected, ipbb_byteArraysPanama(q, d));
-        assertEquals(expected, ipbb_byteArraysPanama2(q, d));
-        //assertEquals(expected, ipByteBinBytePanWags(q, d));
+
+        for (Method method : getIpByteBinMethods()) {
+            System.out.println("Testing with:" + method);
+            assertEquals(expected, method.invoke(null, q, d), "Testing with:" + method);
+        }
     }
 
     @ParameterizedTest
     @MethodSource("dimsProvider")
-    public void testMinValue(int dims) {
+    public void testMinValue(int dims) throws Exception {
         final int baSize = dims / Byte.SIZE;
         byte[] d = new byte[baSize];
         byte[] q = new byte[d.length << 2];
         Arrays.fill(d, Byte.MIN_VALUE);
         Arrays.fill(q, Byte.MIN_VALUE);
         long expected = scalarIpByteBin(q, d);
-        assertEquals(expected, ipbb_byteArraysPanamaStrideAsShort128(q, d));
-        assertEquals(expected, ipbb_byteArraysScalarStrideAsInt(q, d));
-        assertEquals(expected, ipbb_byteArraysPanama2(q, d));
-        assertEquals(expected, ipbb_byteArraysPanama(q, d));
-        //assertEquals(expected, ipByteBinBytePanWags(q, d));
+
+        for (Method method : getIpByteBinMethods()) {
+            System.out.println("Testing with:" + method);
+            assertEquals(expected, method.invoke(null, q, d), "Testing with:" + method);
+        }
     }
 
     @ParameterizedTest
     @MethodSource("dimsProvider")
-    public void testMinusOneValue(int dims) {
+    public void testMinusOneValue(int dims) throws Exception {
         final int baSize = dims / Byte.SIZE;
         byte[] d = new byte[baSize];
         byte[] q = new byte[d.length << 2];
         Arrays.fill(d, (byte)-1);
         Arrays.fill(q, (byte)-1);
         long expected = scalarIpByteBin(q, d);
-        assertEquals(expected, ipbb_byteArraysPanamaStrideAsShort128(q, d));
-        assertEquals(expected, ipbb_byteArraysScalarStrideAsInt(q, d));
-        assertEquals(expected, ipbb_byteArraysPanama(q, d));
-        assertEquals(expected, ipbb_byteArraysPanama2(q, d));
-        // assertEquals(expected, ipByteBinBytePanWags(q, d));
+
+        for (Method method : getIpByteBinMethods()) {
+            System.out.println("Testing with:" + method);
+            assertEquals(expected, method.invoke(null, q, d), "Testing with:" + method);
+        }
     }
 
     byte[] randomByteArray(int length) {
@@ -114,5 +118,14 @@ public class IpByteBinTests {
             }
         }
         return res;
+    }
+
+    static List<Method> getIpByteBinMethods() {
+        return Arrays.stream(IpByteBinBenchmark.class.getDeclaredMethods())
+                .filter(met -> Modifier.isStatic(met.getModifiers()))
+                .filter(met -> met.getParameterCount() == 2)
+                .filter(met -> (met.getParameters()[0].getType() == byte[].class) && (met.getParameters()[1].getType() == byte[].class))
+                .filter(met -> !met.getName().equals("ipByteBinBytePanWags")) // skip for now
+                .toList();
     }
 }

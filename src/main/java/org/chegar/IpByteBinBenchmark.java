@@ -249,7 +249,12 @@ public class IpByteBinBenchmark {
         return acc0 + acc1 + acc2 + acc3;
     }
 
-     static long ipByteBinConstUnrolledBQuery(long[] q, long[] d) {
+    @Benchmark
+    public long ipbb_ConstUnrolledBQueryBench() {
+        return ipByteBinConstUnrolledBQuery(qLong, dLong);
+    }
+
+    static long ipByteBinConstUnrolledBQuery(long[] q, long[] d) {
         int sum0 = 0, sum1 = 0, sum2 = 0, sum3 = 0;
         for (int i = 0; i < 6; i++) {
             sum0 += Long.bitCount(q[i] & d[i]);
@@ -258,6 +263,11 @@ public class IpByteBinBenchmark {
             sum3 += Long.bitCount(q[3 * 6 + i] & d[i]);
         }
         return (sum0) + (sum1 << 1) + (sum2 << 2) + (sum3 << 3);
+    }
+
+    @Benchmark
+    public long ipbb_LongPanamaUnrolledBench() {
+        return ipByteBinLongPanUnrolled(qLong, dLong);
     }
 
     public static long ipByteBinLongPanUnrolled(long[] q, long[] d) {
@@ -486,6 +496,12 @@ public class IpByteBinBenchmark {
         }
         return ret;
     }
+
+    @Benchmark
+    public long ipbb_BytePanWideCountBench() {
+        return ipByteBinBytePanWideCount(qBytes, dBytes);
+    }
+
     public static long ipByteBinBytePanWideCount(byte[] q, byte[] d) {
         long ret = 0;
         for (int i = 0; i < B_QUERY; i++) {
@@ -511,6 +527,11 @@ public class IpByteBinBenchmark {
         return ret;
     }
 
+    @Benchmark
+    public long ipbb_BytePanUnrolledBench() {
+        return ipByteBinBytePanUnrolled(qBytes, dBytes);
+    }
+
     public static long ipByteBinBytePanUnrolled(byte[] q, byte[] d) {
         long ret = 0;
         long subRet0 = 0;
@@ -530,13 +551,13 @@ public class IpByteBinBenchmark {
             ByteVector vres2 = vq2.and(vd);
             ByteVector vres3 = vq3.and(vd);
             vres0 = vres0.lanewise(VectorOperators.BIT_COUNT);
-            subRet0 += vres0.reduceLanes(VectorOperators.ADD);
+            subRet0 += Math.abs(vres0.reduceLanes(VectorOperators.ADD));
             vres1 = vres1.lanewise(VectorOperators.BIT_COUNT);
-            subRet1 += vres1.reduceLanes(VectorOperators.ADD);
+            subRet1 += Math.abs(vres1.reduceLanes(VectorOperators.ADD));
             vres2 = vres2.lanewise(VectorOperators.BIT_COUNT);
-            subRet2 += vres2.reduceLanes(VectorOperators.ADD);
+            subRet2 += Math.abs(vres2.reduceLanes(VectorOperators.ADD));
             vres3 = vres3.lanewise(VectorOperators.BIT_COUNT);
-            subRet3 += vres3.reduceLanes(VectorOperators.ADD);
+            subRet3 += Math.abs(vres3.reduceLanes(VectorOperators.ADD));
         }
         for (; r < d.length; r++) {
             subRet0 += Integer.bitCount((q[r] & d[r]) & 0xFF);
@@ -581,17 +602,17 @@ public class IpByteBinBenchmark {
         if (ipByteBinBytePanWags() != expected) {
             throw new AssertionError("expected:" + expected + " != ipByteBinBytePanWags:" + ipByteBinBytePanWags());
         }
-        if (ipByteBinPanByteBenchUnrolled() != expected) {
-            throw new AssertionError("expected:" + expected + " != ipByteBinPanByteBenchUnrolled:" + ipByteBinPanByteBenchUnrolled());
+        if (ipbb_LongPanamaUnrolledBench() != expected) {
+            throw new AssertionError("expected:" + expected + " != ipbb_LongPanamaUnrolledBench:" + ipbb_LongPanamaUnrolledBench());
         }
-        if (ipByteBinPanByteBenchWideCount() != expected) {
-            throw new AssertionError("expected:" + expected + " != ipByteBinPanByteBenchWideCount:" + ipByteBinPanByteBenchWideCount());
+        if (ipbb_ConstUnrolledBQueryBench() != expected) {
+            throw new AssertionError("expected:" + expected + " != ipbb_ConstUnrolledBQueryBench:" + ipbb_ConstUnrolledBQueryBench());
         }
-        if (ipByteBinConstUnrolledBQueryLongBench() != expected) {
-            throw new AssertionError("expected:" + expected + " != ipByteBinConstUnrolledBQueryLongBench:" + ipByteBinConstUnrolledBQueryLongBench());
+        if (ipbb_BytePanUnrolledBench() != expected) {
+            throw new AssertionError("expected:" + expected + " != ipbb_BytePanUnrolledBench:" + ipbb_BytePanUnrolledBench());
         }
-        if (ipByteBinLongPan() != expected) {
-            throw new AssertionError("expected:" + expected + " != ipByteBinLongPan:" + ipByteBinLongPan());
+        if (ipbb_BytePanWideCountBench() != expected) {
+            throw new AssertionError("expected:" + expected + " != ipbb_BytePanWideCountBench:" + ipbb_BytePanWideCountBench());
         }
     }
 }
