@@ -1,13 +1,20 @@
 package org.chegar;
 
 import jdk.incubator.vector.ByteVector;
+import jdk.incubator.vector.IntVector;
+import jdk.incubator.vector.LongVector;
+import jdk.incubator.vector.ShortVector;
 import jdk.incubator.vector.VectorOperators;
 import jdk.incubator.vector.VectorSpecies;
 import org.apache.lucene.util.BitUtil;
 import org.openjdk.jmh.annotations.*;
 
+import java.lang.foreign.MemorySegment;
+import java.nio.ByteOrder;
 import java.util.Random;
 import java.util.concurrent.TimeUnit;
+
+import static jdk.incubator.vector.VectorOperators.ZERO_EXTEND_B2S;
 
 // TODO: lower fork count to speedup dev iterations
 @Fork(value = 1, jvmArgsPrepend = {"--add-modules=jdk.incubator.vector"})
@@ -33,9 +40,13 @@ import java.util.concurrent.TimeUnit;
  */
 public class IpByteBinBenchmark {
 
+    static final VectorSpecies<Byte> BYTE_64_SPECIES = ByteVector.SPECIES_64;
+    static final VectorSpecies<Byte> BYTE_128_SPECIES = ByteVector.SPECIES_128;
+    static final VectorSpecies<Short> SHORT_128_SPECIES = ShortVector.SPECIES_128;
+
     public static final int B_QUERY = 4;
 
-    @Param({ "384" })
+    @Param({ "1024" })
     int dims;
 
     long[] qLong;
@@ -72,41 +83,16 @@ public class IpByteBinBenchmark {
     // just for debugging
      public static void main(String... args) {
          var test = new IpByteBinBenchmark();
-         test.dims = 384;
+         test.dims = 4096; //384;
          test.setup();
      }
 
     @Benchmark
-    public long ipByteBinLongBench() {
-        return ipByteBin(qLong, dLong, B);
+    public long ipbb_longArraysScalarBench() {
+        return ipbb_longArraysScalar(qLong, dLong, B);
     }
 
-    @Benchmark
-    public long ipByteBinByteBench() {
-        return ipByteBinByte(qBytes, dBytes);
-    }
-
-    @Benchmark
-    public long ipByteBinConstLongBench() {
-        return ipByteBinConst(qLong, dLong);
-    }
-
-    @Benchmark
-    public long ipByteBinConstUnrolledLongBench() {
-        return ipByteBinConstUnrolled(qLong, dLong);
-    }
-
-    @Benchmark
-    public long ipByteBinConstUnrolledUnrolledLongBench() {
-        return ipByteBinConstUnrolledUnrolled(qLong, dLong);
-    }
-
-    @Benchmark
-    public long ipByteBinPanByteBench() {
-        return ipByteBinBytePan(qBytes, dBytes);
-    }
-
-    public static long ipByteBin(long[] q, long[] d, int B) {
+    static long ipbb_longArraysScalar(long[] q, long[] d, int B) {
         long ret = 0;
         int size = B / 64;
         for (int i = 0; i < B_QUERY; i++) {
@@ -120,7 +106,12 @@ public class IpByteBinBenchmark {
         return ret;
     }
 
-    public static long ipByteBinByte(byte[] q, byte[] d) {
+    @Benchmark
+    public long ipbb_byteArraysScalarStrideAsIntBench() {
+        return ipbb_byteArraysScalarStrideAsInt(qBytes, dBytes);
+    }
+
+    static long ipbb_byteArraysScalarStrideAsInt(byte[] q, byte[] d) {
         long ret = 0;
         int size = d.length;
         for (int i = 0; i < B_QUERY; i++) {
@@ -133,19 +124,25 @@ public class IpByteBinBenchmark {
                                         & (int) BitUtil.VH_NATIVE_INT.get(d, r));
             }
             for (; r < d.length; r++) {
-                subRet += Integer.bitCount((q[i * size + r] & d[i]) & 0xFF);
+                subRet += Integer.bitCount((q[i * size + r] & d[r]) & 0xFF);
             }
             ret += subRet << i;
         }
         return ret;
     }
 
+
+    @Benchmark
+    public long ipbb_longArraysScalarConstBench() {
+        return ipbb_longArraysScalarConst(qLong, dLong);
+    }
+
     // Using constants, for B_QUERY and B, give 2x perf
     // observation: no vectorization, popcnt yes, but on rbx etc, 64 bits at a time.
     //  all loops unrolled. 4x6 popcnts directly
-    static long ipByteBinConst(long[] q, long[] d) {
+    static long ipbb_longArraysScalarConst(long[] q, long[] d) {
         long ret = 0;
-        for (int i = 0; i < 4; i++) { // B_QUERY: 4
+        for (int i = 0; i < B_QUERY; i++) {
             long subRet = 0;
             for (int j = 0; j < 6; j++) { // size: 6
                 long estimatedDist = q[i * 6 + j] & d[j];
@@ -156,13 +153,14 @@ public class IpByteBinBenchmark {
         return ret;
     }
 
-    // IpByteBinBenchmark.ipByteBinBench                           thrpt    5   44.771 ± 0.130  ops/us
-    // IpByteBinBenchmark.ipByteBinConstBench                      thrpt    5   99.366 ± 0.179  ops/us
-    // IpByteBinBenchmark.ipByteBinConstUnrolledBench              thrpt    5  130.479 ± 0.832  ops/us
-    // IpByteBinBenchmark.ipByteBinConstUnrolledUnrolledBench      thrpt    5  107.191 ± 2.864  ops/us
-    static long ipByteBinConstUnrolled(long[] q, long[] d) {
+    @Benchmark
+    public long ipbb_longArraysScalarConstUnrolledBench() {
+        return ipbb_longArraysScalarConstUnrolled(qLong, dLong);
+    }
+
+    static long ipbb_longArraysScalarConstUnrolled(long[] q, long[] d) {
         long ret = 0;
-        for (int i = 0; i < 4; i++) { // B_QUERY: 4
+        for (int i = 0; i < B_QUERY; i++) {
             long estimatedDist0 = q[i * 6 + 0] & d[0];
             int subRet0 = Long.bitCount(estimatedDist0);
             long estimatedDist1 = q[i * 6 + 1] & d[1];
@@ -180,8 +178,12 @@ public class IpByteBinBenchmark {
         return ret;
     }
 
-    // IpByteBinBenchmark.ipByteBinConstUnrolledUnrolledBench      thrpt    5  107.191 ± 2.864  ops/us
-    static long ipByteBinConstUnrolledUnrolled(long[] q, long[] d) {
+    @Benchmark
+    public long ipbb_longArraysScalarConstUnrolledUnrolledBench() {
+        return ipbb_longArrysScalarConstUnrolledUnrolled(qLong, dLong);
+    }
+
+    static long ipbb_longArrysScalarConstUnrolledUnrolled(long[] q, long[] d) {
         long acc0, acc1, acc2, acc3;
         {
             long estimatedDist0 = q[0] & d[0];
@@ -246,44 +248,218 @@ public class IpByteBinBenchmark {
         return acc0 + acc1 + acc2 + acc3;
     }
 
+    @Benchmark
+    public long ipbb_byteArraysPanamaBench2() {
+        return ipbb_byteArraysPanama2(qBytes, dBytes);
+    }
+
+    public static long ipbb_byteArraysPanama2(byte[] q, byte[] d) {
+        long ret = 0;
+        for (int i = 0; i < B_QUERY; i++) {
+            int r = 0;
+            final int limit = BYTE_64_SPECIES.loopBound(d.length);
+            ShortVector acc = ShortVector.zero(SHORT_128_SPECIES);
+            for (; r < limit; r+=BYTE_64_SPECIES.length()) {
+                var vq = (ShortVector) ByteVector.fromArray(BYTE_64_SPECIES, q, d.length * i + r).convertShape(ZERO_EXTEND_B2S, SHORT_128_SPECIES, 0);
+                var vd = (ShortVector) ByteVector.fromArray(BYTE_64_SPECIES, d, r).convertShape(ZERO_EXTEND_B2S, SHORT_128_SPECIES, 0);
+                var vres = vq.and(vd);
+                vres = vres.lanewise(VectorOperators.BIT_COUNT);
+                acc = acc.add(vres);
+            }
+            long subRet = acc.reduceLanes(VectorOperators.ADD);
+
+            // tail
+            for (int l = limit; l < d.length; l++) {
+                subRet += Integer.bitCount((q[d.length * i + l] & d[l]) & 0xFF);
+            }
+            ret += subRet << i;
+        }
+        return ret;
+    }
+
     static final VectorSpecies<Byte> BYTE_SPECIES = ByteVector.SPECIES_PREFERRED;
 
-    public static long ipByteBinBytePan(byte[] q, byte[] d) {
+    @Benchmark
+    public long ipbb_byteArraysPanamaBench() {
+        return ipbb_byteArraysPanama(qBytes, dBytes);
+    }
+
+    public static long ipbb_byteArraysPanama(byte[] q, byte[] d) {
         long ret = 0;
         for (int i = 0; i < B_QUERY; i++) {
             long subRet = 0;
-            int limit = BYTE_SPECIES.loopBound(d.length);
-            int r = 0;
-            for (; r < limit; r+=BYTE_SPECIES.length()) {
-                ByteVector vq = ByteVector.fromArray(BYTE_SPECIES, q, d.length * i + r);
-                ByteVector vd = ByteVector.fromArray(BYTE_SPECIES, d, r);
+            final int limit = BYTE_SPECIES.loopBound(d.length);
+            // iterate in chunks of 256 items to ensure we don't overflow the accumulator
+            for (int j = 0; j < limit; j += 256) {
+                ByteVector acc = ByteVector.zero(BYTE_SPECIES);
+                int innerLimit = Math.min(limit - j, 256);
+                for (int k = 0; k < innerLimit; k+=BYTE_SPECIES.length()) {
+                    var vq = ByteVector.fromArray(BYTE_SPECIES, q, (d.length * i) + (j + k));
+                    var vd = ByteVector.fromArray(BYTE_SPECIES, d, j + k);
+                    var vres = vq.and(vd);
+                    acc = acc.add(vres.lanewise(VectorOperators.BIT_COUNT));
+                }
+                ShortVector sumShort1 = acc.reinterpretAsShorts().and((short) 0xFF);
+                ShortVector sumShort2 = acc.reinterpretAsShorts().lanewise(VectorOperators.LSHR, 8);
+                subRet += sumShort1.add(sumShort2).reduceLanes(VectorOperators.ADD);
+            }
+            // tail
+            for (int l = limit; l < d.length; l++) {
+                subRet += Integer.bitCount((q[d.length * i + l] & d[l]) & 0xFF);
+            }
+            ret += subRet << i;
+        }
+        return ret;
+    }
+
+    static int unsignedSum(ByteVector bv) {
+        // convert to LongVector because Vector.get is slow
+        var lv = (LongVector) bv.reinterpretAsLongs();
+        return sumBytes(lv.lane(0))
+                + sumBytes(lv.lane(1));  // 2 x 64
+               // + sumBytes(lv.lane(2))
+               // + sumBytes(lv.lane(3));
+    }
+
+    static int sumBytes(long w) {
+        return ((int)w & 0xFF)
+                + (((int)(w >>> 8))  & 0xFF)
+                + (((int)(w >>> 16)) & 0xFF)
+                + (((int)(w >>> 24)) & 0xFF)
+                + (((int)(w >>> 32)) & 0xFF)
+                + (((int)(w >>> 40)) & 0xFF)
+                + (((int)(w >>> 48)) & 0xFF)
+                + (((int)(w >>> 56)) & 0xFF);
+    }
+
+    @Benchmark
+    public long ipbb_byteArraysPanamaStrideAsIntBench() {
+        return ipbb_byteArraysPanamaStrideAsInt(qBytes, dBytes);
+    }
+
+    public static long ipbb_byteArraysPanamaStrideAsInt(byte[] q, byte[] d) {
+        //final MemorySegment qSeg = MemorySegment.ofArray(q);
+        //final MemorySegment dSeg = MemorySegment.ofArray(d);
+        long ret = 0;
+        for (int i = 0; i < B_QUERY; i++) {
+            int limit = IntVector.SPECIES_PREFERRED.loopBound(d.length);
+            var sum = IntVector.zero(IntVector.SPECIES_PREFERRED);
+            for (int r = 0; r < limit; r+=IntVector.SPECIES_PREFERRED.vectorByteSize()) {
+                var vq = IntVector.fromMemorySegment(IntVector.SPECIES_PREFERRED, MemorySegment.ofArray(q), d.length * i + r, ByteOrder.nativeOrder());
+                var vd = IntVector.fromMemorySegment(IntVector.SPECIES_PREFERRED, MemorySegment.ofArray(d), r, ByteOrder.nativeOrder());
+                var vres = vq.and(vd);
+                vres = vres.lanewise(VectorOperators.BIT_COUNT);
+                // subRet += vres.reduceLanes(VectorOperators.ADD);
+                sum = sum.add(vres);
+            }
+            long subRet = sum.reduceLanes(VectorOperators.ADD);
+            // tail
+            for (int l = limit; l < d.length; l++) {
+                subRet += Integer.bitCount((q[d.length * i + l] & d[l]) & 0xFF);
+            }
+            ret += subRet << i;
+        }
+        return ret;
+    }
+
+    @Benchmark
+    public long ipbb_byteArraysPanamaStrideAsShortBench() {
+        return ipbb_byteArraysPanamaStrideAsShort128(qBytes, dBytes);
+    }
+
+    public static long ipbb_byteArraysPanamaStrideAsShort128(byte[] q, byte[] d) {
+        long ret = 0;
+        for (int i = 0; i < B_QUERY; i++) {
+            final int qOffset = d.length * i;
+            long subRet = 0;
+            final int limit = BYTE_128_SPECIES.loopBound(d.length);
+            // iterate in chunks of 256 bytes to ensure we don't overflow the accumulator (256bytes/16lanes=16itrs)
+            for (int j =0; j < limit; j += 256) {
+                ByteVector acc = ByteVector.zero(BYTE_128_SPECIES);
+                int innerLimit = Math.min(limit - i, 256);
+                for (int k = 0; k < innerLimit; k += BYTE_128_SPECIES.length()) {
+                    ByteVector vq = ByteVector.fromArray(BYTE_128_SPECIES, q, qOffset + j + k);
+                    ByteVector vd = ByteVector.fromArray(BYTE_128_SPECIES, d, j + k);
+                    ByteVector vres = vq.and(vd);
+                    vres = vres.lanewise(VectorOperators.BIT_COUNT);
+                    acc = acc.add(vres);
+                }
+                ShortVector sumShort1 = acc.reinterpretAsShorts().and((short) 0xFF);
+                ShortVector sumShort2 = acc.reinterpretAsShorts().lanewise(VectorOperators.LSHR, 8);
+                subRet += sumShort1.add(sumShort2).reduceLanes(VectorOperators.ADD);
+            }
+            //tail
+            for (int t = limit; t < d.length; t++) {
+                subRet += Integer.bitCount((q[qOffset + t] & d[t]) & 0xFF);
+            }
+            ret += subRet << i;
+        }
+        return ret;
+    }
+
+    @Benchmark
+    public long ipByteBinBytePanWags() {
+        return ipByteBinBytePanWags(qBytes, dBytes);
+    }
+
+    public static long ipByteBinBytePanWags(byte[] q, byte[] d) {
+        int vectorSize = d.length / BYTE_SPECIES.length();
+        long ret = 0;
+        int size = d.length;
+        for (int i = 0; i < B_QUERY; i++) {
+            long subRet = 0;
+            for (int r = 0; r < vectorSize; r++) {
+                int offset = BYTE_SPECIES.length() * r;
+                ByteVector vq = ByteVector.fromArray(BYTE_SPECIES, q, d.length * i + offset);
+                ByteVector vd = ByteVector.fromArray(BYTE_SPECIES, d, offset);
                 ByteVector vres = vq.and(vd);
                 vres = vres.lanewise(VectorOperators.BIT_COUNT);
-                subRet += vres.reduceLanes(VectorOperators.ADD);
+                subRet += Math.abs(vres.reduceLanes(VectorOperators.ADD));
             }
 
-            // tail  TODO: ignore tail for now
-            //  for (; r < d.length; r++) {
-            //    subRet +=
-            //  }
+            // FIXME: come back and pad the arrays with zeros instead of dealing with the tail?
+            // tail
+            int remainder = d.length % BYTE_SPECIES.length();
+            if(remainder != 0) {
+                for(int j = d.length-remainder; j < d.length; j += Integer.BYTES) {
+                    subRet += Integer.bitCount((int) BitUtil.VH_NATIVE_INT.get(q, i * size + j) & (int) BitUtil.VH_NATIVE_INT.get(d, j));
+                }
+            }
+
             ret += subRet << i;
         }
         return ret;
     }
 
     void sanity() {
-        final long expected = ipByteBinLongBench();
-        if (ipByteBinConstLongBench() != expected) {
-            throw new AssertionError("expected:" + expected + " != ipByteBinConstLongBench:" + ipByteBinConstLongBench());
+        final long expected = ipbb_longArraysScalarBench();
+
+//        if (ipByteBinConstLongBench() != expected) {
+//            throw new AssertionError("expected:" + expected + " != ipByteBinConstLongBench:" + ipByteBinConstLongBench());
+//        }
+//        if (ipByteBinConstUnrolledLongBench() != expected) {
+//            throw new AssertionError("expected:" + expected + " != ipByteBinConstUnrolledLongBench:" + ipByteBinConstUnrolledLongBench());
+//        }
+//        if (ipByteBinConstUnrolledUnrolledLongBench() != expected) {
+//            throw new AssertionError("expected:" + expected + " != ipByteBinConstUnrolledUnrolledLongBench:" + ipByteBinConstUnrolledUnrolledLongBench());
+//        }
+//        if (ipByteBinByteBench() != expected) {
+//            throw new AssertionError("expected:" + expected + " != ipByteBinByteBench:" + ipByteBinByteBench());
+//        }
+//        if (ipbb_byteArraysPanamaBench() != expected) {
+//            throw new AssertionError("expected:" + expected + " != ipbb_byteArraysPanamaBench:" + ipbb_byteArraysPanamaBench());
+//        }
+        if (ipbb_byteArraysPanamaBench2() != expected) {
+            throw new AssertionError("expected:" + expected + " != ipbb_byteArraysPanamaBench2:" + ipbb_byteArraysPanamaBench2());
         }
-        if (ipByteBinConstUnrolledLongBench() != expected) {
-            throw new AssertionError("expected:" + expected + " != ipByteBinConstUnrolledLongBench:" + ipByteBinConstUnrolledLongBench());
+        if (ipbb_byteArraysPanamaStrideAsShortBench() != expected) {
+            throw new AssertionError("expected:" + expected + " != ipbb_byteArraysPanamaStrideAsShortBench:" + ipbb_byteArraysPanamaStrideAsShortBench());
         }
-        if (ipByteBinConstUnrolledUnrolledLongBench() != expected) {
-            throw new AssertionError("expected:" + expected + " != ipByteBinConstUnrolledUnrolledLongBench:" + ipByteBinConstUnrolledUnrolledLongBench());
+        if (ipbb_byteArraysPanamaStrideAsIntBench() != expected) {
+            throw new AssertionError("expected:" + expected + " != ipbb_byteArraysPanamaStrideAsIntBench:" + ipbb_byteArraysPanamaStrideAsIntBench());
         }
-        if (ipByteBinByteBench() != expected) {
-            throw new AssertionError("expected:" + expected + " != ipByteBinByteBench:" + ipByteBinByteBench());
+        if (ipByteBinBytePanWags() != expected) {
+            throw new AssertionError("expected:" + expected + " != ipByteBinBytePanWags:" + ipByteBinBytePanWags());
         }
     }
 }
