@@ -8,7 +8,7 @@ on the same underlying data on AArch64.
 
 The issue is that`Long::bitcount` is not vectorized, while `Integer::bitcount`
 uses NEON SIMD instruction to operate on groups of 4 32-bit ints at a time.
-This is a counterintuitive and effectively an implementation bug in the 
+This is counterintuitive and effectively an implementation bug in the 
 Hotspot C2 compiler for AArch64.
 
 Linux x64 shows no such issue - performance of int and long bit counts is
