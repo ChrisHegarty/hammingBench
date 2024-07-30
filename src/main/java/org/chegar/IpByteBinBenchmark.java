@@ -14,6 +14,7 @@ import java.nio.ByteOrder;
 import java.util.Random;
 import java.util.concurrent.TimeUnit;
 
+import static jdk.incubator.vector.VectorOperators.B2S;
 import static jdk.incubator.vector.VectorOperators.ZERO_EXTEND_B2S;
 
 // TODO: lower fork count to speedup dev iterations
@@ -248,6 +249,62 @@ public class IpByteBinBenchmark {
         return acc0 + acc1 + acc2 + acc3;
     }
 
+     static long ipByteBinConstUnrolledBQuery(long[] q, long[] d) {
+        int sum0 = 0, sum1 = 0, sum2 = 0, sum3 = 0;
+        for (int i = 0; i < 6; i++) {
+            sum0 += Long.bitCount(q[i] & d[i]);
+            sum1 += Long.bitCount(q[6 + i] & d[i]);
+            sum2 += Long.bitCount(q[2 * 6 + i] & d[i]);
+            sum3 += Long.bitCount(q[3 * 6 + i] & d[i]);
+        }
+        return (sum0) + (sum1 << 1) + (sum2 << 2) + (sum3 << 3);
+    }
+
+    public static long ipByteBinLongPanUnrolled(long[] q, long[] d) {
+        long ret = 0;
+        long subRet0 = 0;
+        long subRet1 = 0;
+        long subRet2 = 0;
+        long subRet3 = 0;
+        int limit = LongVector.SPECIES_PREFERRED.loopBound(d.length);
+        int r = 0;
+        LongVector sum0 = LongVector.zero(LongVector.SPECIES_PREFERRED);
+        LongVector sum1 = LongVector.zero(LongVector.SPECIES_PREFERRED);
+        LongVector sum2 = LongVector.zero(LongVector.SPECIES_PREFERRED);
+        LongVector sum3 = LongVector.zero(LongVector.SPECIES_PREFERRED);
+
+        for (; r < limit; r += LongVector.SPECIES_PREFERRED.length()) {
+            LongVector vq0 = LongVector.fromArray(LongVector.SPECIES_PREFERRED, q, r);
+            LongVector vq1 = LongVector.fromArray(LongVector.SPECIES_PREFERRED, q, r + d.length);
+            LongVector vq2 = LongVector.fromArray(LongVector.SPECIES_PREFERRED, q, r + d.length * 2);
+            LongVector vq3 = LongVector.fromArray(LongVector.SPECIES_PREFERRED, q, r + d.length * 3);
+            LongVector vd = LongVector.fromArray(LongVector.SPECIES_PREFERRED, d, r);
+            LongVector vres0 = vq0.and(vd).lanewise(VectorOperators.BIT_COUNT);
+            LongVector vres1 = vq1.and(vd).lanewise(VectorOperators.BIT_COUNT);
+            LongVector vres2 = vq2.and(vd).lanewise(VectorOperators.BIT_COUNT);
+            LongVector vres3 = vq3.and(vd).lanewise(VectorOperators.BIT_COUNT);
+            sum0 = sum0.add(vres0);
+            sum1 = sum1.add(vres1);
+            sum2 = sum2.add(vres2);
+            sum3 = sum3.add(vres3);
+        }
+        subRet0 += sum0.reduceLanes(VectorOperators.ADD);
+        subRet1 += sum1.reduceLanes(VectorOperators.ADD);
+        subRet2 += sum2.reduceLanes(VectorOperators.ADD);
+        subRet3 += sum3.reduceLanes(VectorOperators.ADD);
+        for (; r < d.length; r++) {
+            subRet0 += Long.bitCount(q[r] & d[r]);
+            subRet1 += Long.bitCount(q[r + d.length] & d[r]);
+            subRet2 += Long.bitCount(q[r + 2 * d.length] & d[r]);
+            subRet3 += Long.bitCount(q[r + 3 * d.length] & d[r]);
+        }
+        ret += subRet0;
+        ret += subRet1 << 1;
+        ret += subRet2 << 2;
+        ret += subRet3 << 3;
+        return ret;
+    }
+
     @Benchmark
     public long ipbb_byteArraysPanamaBench2() {
         return ipbb_byteArraysPanama2(qBytes, dBytes);
@@ -425,9 +482,72 @@ public class IpByteBinBenchmark {
                     subRet += Integer.bitCount((int) BitUtil.VH_NATIVE_INT.get(q, i * size + j) & (int) BitUtil.VH_NATIVE_INT.get(d, j));
                 }
             }
-
             ret += subRet << i;
         }
+        return ret;
+    }
+    public static long ipByteBinBytePanWideCount(byte[] q, byte[] d) {
+        long ret = 0;
+        for (int i = 0; i < B_QUERY; i++) {
+            long subRet = 0;
+            int limit = BYTE_SPECIES.loopBound(d.length);
+            int r = 0;
+            ByteVector sum = ByteVector.zero(BYTE_SPECIES);
+            for (; r < limit; r+=BYTE_SPECIES.length()) {
+                ByteVector vq = ByteVector.fromArray(BYTE_SPECIES, q, d.length * i + r);
+                ByteVector vd = ByteVector.fromArray(BYTE_SPECIES, d, r);
+                ByteVector vres = vq.and(vd);
+                vres = vres.lanewise(VectorOperators.BIT_COUNT);
+                sum = sum.add(vres);
+            }
+            ShortVector sumShort1 = sum.convertShape(B2S, ShortVector.SPECIES_PREFERRED, 0).reinterpretAsShorts();
+            ShortVector sumShort2 = sum.convertShape(B2S, ShortVector.SPECIES_PREFERRED, 1).reinterpretAsShorts();
+            subRet += (sumShort1.reduceLanes(VectorOperators.ADD) + sumShort2.reduceLanes(VectorOperators.ADD));
+            for (; r < d.length; r++) {
+                subRet += Integer.bitCount((q[i * d.length + r] & d[r]) & 0xFF);
+            }
+            ret += subRet << i;
+        }
+        return ret;
+    }
+
+    public static long ipByteBinBytePanUnrolled(byte[] q, byte[] d) {
+        long ret = 0;
+        long subRet0 = 0;
+        long subRet1 = 0;
+        long subRet2 = 0;
+        long subRet3 = 0;
+        int limit = BYTE_SPECIES.loopBound(d.length);
+        int r = 0;
+        for (; r < limit; r+=BYTE_SPECIES.length()) {
+            ByteVector vq0 = ByteVector.fromArray(BYTE_SPECIES, q, r);
+            ByteVector vq1 = ByteVector.fromArray(BYTE_SPECIES, q, r + d.length);
+            ByteVector vq2 = ByteVector.fromArray(BYTE_SPECIES, q, r + 2 * d.length);
+            ByteVector vq3 = ByteVector.fromArray(BYTE_SPECIES, q, r + 3 * d.length);
+            ByteVector vd = ByteVector.fromArray(BYTE_SPECIES, d, r);
+            ByteVector vres0 = vq0.and(vd);
+            ByteVector vres1 = vq1.and(vd);
+            ByteVector vres2 = vq2.and(vd);
+            ByteVector vres3 = vq3.and(vd);
+            vres0 = vres0.lanewise(VectorOperators.BIT_COUNT);
+            subRet0 += vres0.reduceLanes(VectorOperators.ADD);
+            vres1 = vres1.lanewise(VectorOperators.BIT_COUNT);
+            subRet1 += vres1.reduceLanes(VectorOperators.ADD);
+            vres2 = vres2.lanewise(VectorOperators.BIT_COUNT);
+            subRet2 += vres2.reduceLanes(VectorOperators.ADD);
+            vres3 = vres3.lanewise(VectorOperators.BIT_COUNT);
+            subRet3 += vres3.reduceLanes(VectorOperators.ADD);
+        }
+        for (; r < d.length; r++) {
+            subRet0 += Integer.bitCount((q[r] & d[r]) & 0xFF);
+            subRet1 += Integer.bitCount((q[r + d.length] & d[r]) & 0xFF);
+            subRet2 += Integer.bitCount((q[r + 2 * d.length] & d[r]) & 0xFF);
+            subRet3 += Integer.bitCount((q[r + 3 * d.length] & d[r]) & 0xFF);
+        }
+        ret += subRet0;
+        ret += subRet1 << 1;
+        ret += subRet2 << 2;
+        ret += subRet3 << 3;
         return ret;
     }
 
@@ -460,6 +580,18 @@ public class IpByteBinBenchmark {
         }
         if (ipByteBinBytePanWags() != expected) {
             throw new AssertionError("expected:" + expected + " != ipByteBinBytePanWags:" + ipByteBinBytePanWags());
+        }
+        if (ipByteBinPanByteBenchUnrolled() != expected) {
+            throw new AssertionError("expected:" + expected + " != ipByteBinPanByteBenchUnrolled:" + ipByteBinPanByteBenchUnrolled());
+        }
+        if (ipByteBinPanByteBenchWideCount() != expected) {
+            throw new AssertionError("expected:" + expected + " != ipByteBinPanByteBenchWideCount:" + ipByteBinPanByteBenchWideCount());
+        }
+        if (ipByteBinConstUnrolledBQueryLongBench() != expected) {
+            throw new AssertionError("expected:" + expected + " != ipByteBinConstUnrolledBQueryLongBench:" + ipByteBinConstUnrolledBQueryLongBench());
+        }
+        if (ipByteBinLongPan() != expected) {
+            throw new AssertionError("expected:" + expected + " != ipByteBinLongPan:" + ipByteBinLongPan());
         }
     }
 }
