@@ -47,7 +47,7 @@ public class IpByteBinBenchmark {
 
     public static final int B_QUERY = 4;
 
-    @Param({ "1024" })
+    @Param({ "384", "768", "1024" })
     int dims;
 
     long[] qLong;
@@ -247,22 +247,6 @@ public class IpByteBinBenchmark {
             acc3 = (subRet0 + subRet1 + subRet2 + subRet3 + subRet4 + subRet5) << 3;
         }
         return acc0 + acc1 + acc2 + acc3;
-    }
-
-    @Benchmark
-    public long ipbb_ConstUnrolledBQueryBench() {
-        return ipByteBinConstUnrolledBQuery(qLong, dLong);
-    }
-
-    static long ipByteBinConstUnrolledBQuery(long[] q, long[] d) {
-        int sum0 = 0, sum1 = 0, sum2 = 0, sum3 = 0;
-        for (int i = 0; i < 6; i++) {
-            sum0 += Long.bitCount(q[i] & d[i]);
-            sum1 += Long.bitCount(q[6 + i] & d[i]);
-            sum2 += Long.bitCount(q[2 * 6 + i] & d[i]);
-            sum3 += Long.bitCount(q[3 * 6 + i] & d[i]);
-        }
-        return (sum0) + (sum1 << 1) + (sum2 << 2) + (sum3 << 3);
     }
 
     @Benchmark
@@ -731,9 +715,6 @@ public class IpByteBinBenchmark {
         }
         if (ipbb_LongPanamaUnrolledBench() != expected) {
             throw new AssertionError("expected:" + expected + " != ipbb_LongPanamaUnrolledBench:" + ipbb_LongPanamaUnrolledBench());
-        }
-        if (ipbb_ConstUnrolledBQueryBench() != expected) {
-            throw new AssertionError("expected:" + expected + " != ipbb_ConstUnrolledBQueryBench:" + ipbb_ConstUnrolledBQueryBench());
         }
         if (ipbb_BytePanUnrolledBench() != expected) {
             throw new AssertionError("expected:" + expected + " != ipbb_BytePanUnrolledBench:" + ipbb_BytePanUnrolledBench());
