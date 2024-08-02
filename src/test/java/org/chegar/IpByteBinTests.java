@@ -13,11 +13,6 @@ import java.util.Random;
 import java.util.stream.Stream;
 
 import static org.chegar.IpByteBinBenchmark.B_QUERY;
-import static org.chegar.IpByteBinBenchmark.ipByteBinBytePanWags;
-import static org.chegar.IpByteBinBenchmark.ipbb_byteArraysPanama;
-import static org.chegar.IpByteBinBenchmark.ipbb_byteArraysPanama2;
-import static org.chegar.IpByteBinBenchmark.ipbb_byteArraysPanamaStrideAsShort128;
-import static org.chegar.IpByteBinBenchmark.ipbb_byteArraysScalarStrideAsInt;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 public class IpByteBinTests {

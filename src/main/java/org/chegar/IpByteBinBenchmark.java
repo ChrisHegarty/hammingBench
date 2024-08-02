@@ -389,18 +389,17 @@ public class IpByteBinBenchmark {
     }
 
     public static long ipbb_byteArraysPanamaStrideAsInt(byte[] q, byte[] d) {
-        //final MemorySegment qSeg = MemorySegment.ofArray(q);
-        //final MemorySegment dSeg = MemorySegment.ofArray(d);
+        final MemorySegment qSeg = MemorySegment.ofArray(q);
+        final MemorySegment dSeg = MemorySegment.ofArray(d);
         long ret = 0;
         for (int i = 0; i < B_QUERY; i++) {
-            int limit = IntVector.SPECIES_PREFERRED.loopBound(d.length);
+            int limit = ByteVector.SPECIES_PREFERRED.loopBound(d.length);
             var sum = IntVector.zero(IntVector.SPECIES_PREFERRED);
-            for (int r = 0; r < limit; r+=IntVector.SPECIES_PREFERRED.vectorByteSize()) {
-                var vq = IntVector.fromMemorySegment(IntVector.SPECIES_PREFERRED, MemorySegment.ofArray(q), d.length * i + r, ByteOrder.nativeOrder());
-                var vd = IntVector.fromMemorySegment(IntVector.SPECIES_PREFERRED, MemorySegment.ofArray(d), r, ByteOrder.nativeOrder());
+            for (int r = 0; r < limit; r += ByteVector.SPECIES_PREFERRED.length()) {
+                var vq = ByteVector.fromMemorySegment(ByteVector.SPECIES_PREFERRED, qSeg, d.length * i + r, ByteOrder.nativeOrder()).reinterpretAsInts();
+                var vd = IntVector.fromMemorySegment(IntVector.SPECIES_PREFERRED, dSeg, r, ByteOrder.nativeOrder()).reinterpretAsInts();
                 var vres = vq.and(vd);
                 vres = vres.lanewise(VectorOperators.BIT_COUNT);
-                // subRet += vres.reduceLanes(VectorOperators.ADD);
                 sum = sum.add(vres);
             }
             long subRet = sum.reduceLanes(VectorOperators.ADD);
