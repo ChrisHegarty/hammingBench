@@ -638,24 +638,24 @@ public class IpByteBinBenchmark {
     }
 
     @Benchmark
-    public long ipbb_BytePanUnrolledBench() {
-        return ipByteBinBytePanUnrolled(qBytes, dBytes);
+    public long ipbb_BytePanUnrolled128Bench() {
+        return ipByteBinBytePanUnrolled128(qBytes, dBytes);
     }
 
-    public static long ipByteBinBytePanUnrolled(byte[] q, byte[] d) {
+    public static long ipByteBinBytePanUnrolled128(byte[] q, byte[] d) {
         long ret = 0;
         long subRet0 = 0;
         long subRet1 = 0;
         long subRet2 = 0;
         long subRet3 = 0;
-        int limit = BYTE_SPECIES.loopBound(d.length);
+        int limit = BYTE_128_SPECIES.loopBound(d.length);
         int r = 0;
-        for (; r < limit; r+=BYTE_SPECIES.length()) {
-            ByteVector vq0 = ByteVector.fromArray(BYTE_SPECIES, q, r);
-            ByteVector vq1 = ByteVector.fromArray(BYTE_SPECIES, q, r + d.length);
-            ByteVector vq2 = ByteVector.fromArray(BYTE_SPECIES, q, r + 2 * d.length);
-            ByteVector vq3 = ByteVector.fromArray(BYTE_SPECIES, q, r + 3 * d.length);
-            ByteVector vd = ByteVector.fromArray(BYTE_SPECIES, d, r);
+        for (; r < limit; r+=BYTE_128_SPECIES.length()) {
+            ByteVector vq0 = ByteVector.fromArray(BYTE_128_SPECIES, q, r);
+            ByteVector vq1 = ByteVector.fromArray(BYTE_128_SPECIES, q, r + d.length);
+            ByteVector vq2 = ByteVector.fromArray(BYTE_128_SPECIES, q, r + 2 * d.length);
+            ByteVector vq3 = ByteVector.fromArray(BYTE_128_SPECIES, q, r + 3 * d.length);
+            ByteVector vd = ByteVector.fromArray(BYTE_128_SPECIES, d, r);
             ByteVector vres0 = vq0.and(vd);
             ByteVector vres1 = vq1.and(vd);
             ByteVector vres2 = vq2.and(vd);
@@ -715,8 +715,8 @@ public class IpByteBinBenchmark {
         if (ipbb_LongPanamaUnrolledBench() != expected) {
             throw new AssertionError("expected:" + expected + " != ipbb_LongPanamaUnrolledBench:" + ipbb_LongPanamaUnrolledBench());
         }
-        if (ipbb_BytePanUnrolledBench() != expected) {
-            throw new AssertionError("expected:" + expected + " != ipbb_BytePanUnrolledBench:" + ipbb_BytePanUnrolledBench());
+        if (ipbb_BytePanUnrolled128Bench() != expected) {
+            throw new AssertionError("expected:" + expected + " != ipbb_BytePanUnrolledBench128:" + ipbb_BytePanUnrolled128Bench());
         }
         if (ipbb_BytePanWideCountBench() != expected) {
             throw new AssertionError("expected:" + expected + " != ipbb_BytePanWideCountBench:" + ipbb_BytePanWideCountBench());
