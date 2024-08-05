@@ -59,10 +59,7 @@ public class IpByteBinBenchmark {
     @Setup
     public void setup() {
         Random rand = new Random();
-        if (dims % Long.BYTES != 0) {
-            throw new AssertionError();
-        }
-        B = dims;
+        B = (dims + 63) / 64 * 64;
         this.qBytes = new byte[(B * B_QUERY) / Byte.SIZE];
         this.dBytes = new byte[B / Byte.SIZE];
         this.qLong = new long[(B * B_QUERY) / Long.SIZE];
@@ -77,7 +74,6 @@ public class IpByteBinBenchmark {
             dLong[i] = l;
             BitUtil.VH_NATIVE_LONG.set(dBytes, i * Long.BYTES, l);
         }
-
         sanity();
     }
 
@@ -108,28 +104,42 @@ public class IpByteBinBenchmark {
     }
 
     @Benchmark
-    public long ipbb_byteArraysScalarStrideAsIntBench() {
-        return ipbb_byteArraysScalarStrideAsInt(qBytes, dBytes);
+    public long ipbb_byteArraysScalarStrideAsIntUnrollBench() {
+        return ipbb_byteArraysScalarStrideUnrollAsInt(qBytes, dBytes);
     }
 
-    static long ipbb_byteArraysScalarStrideAsInt(byte[] q, byte[] d) {
-        long ret = 0;
-        int size = d.length;
-        for (int i = 0; i < B_QUERY; i++) {
-            int r = 0;
-            long subRet = 0;
-            for (final int upperBound = d.length & -Integer.BYTES; r < upperBound; r += Integer.BYTES) {
-                subRet +=
-                        Integer.bitCount(
-                                (int) BitUtil.VH_NATIVE_INT.get(q, i * size + r)
-                                        & (int) BitUtil.VH_NATIVE_INT.get(d, r));
-            }
-            for (; r < d.length; r++) {
-                subRet += Integer.bitCount((q[i * size + r] & d[r]) & 0xFF);
-            }
-            ret += subRet << i;
+    static long ipbb_byteArraysScalarStrideUnrollAsInt(byte[] q, byte[] d) {
+        int r = 0;
+        int subRet0 = 0;
+        int subRet1 = 0;
+        int subRet2 = 0;
+        int subRet3 = 0;
+        for (final int upperBound = d.length & -Integer.BYTES; r < upperBound; r += Integer.BYTES) {
+            final int dInt = (int) BitUtil.VH_NATIVE_INT.get(d, r);
+            subRet0 +=
+                    Integer.bitCount(
+                            (int) BitUtil.VH_NATIVE_INT.get(q, r)
+                                    & dInt);
+            subRet1 +=
+              Integer.bitCount(
+                (int) BitUtil.VH_NATIVE_INT.get(q, r + d.length)
+                  & dInt);
+            subRet2 +=
+              Integer.bitCount(
+                (int) BitUtil.VH_NATIVE_INT.get(q, r + 2 * d.length)
+                  & dInt);
+            subRet3 +=
+              Integer.bitCount(
+                (int) BitUtil.VH_NATIVE_INT.get(q, r + 3 * d.length)
+                  & dInt);
         }
-        return ret;
+        for (; r < d.length; r++) {
+            subRet0 += Integer.bitCount((q[r] & d[r]) & 0xFF);
+            subRet1 += Integer.bitCount((q[r + d.length] & d[r]) & 0xFF);
+            subRet2 += Integer.bitCount((q[r + d.length * 2] & d[r]) & 0xFF);
+            subRet3 += Integer.bitCount((q[r + d.length * 3] & d[r]) & 0xFF);
+        }
+        return subRet0 + (subRet1 << 1) + (subRet2 << 2) + (subRet3 << 3);
     }
 
 
@@ -180,73 +190,59 @@ public class IpByteBinBenchmark {
     }
 
     @Benchmark
-    public long ipbb_longArraysScalarConstUnrolledUnrolledBench() {
-        return ipbb_longArrysScalarConstUnrolledUnrolled(qLong, dLong);
+    public long ipbb_longArraysScalarConstUnrolledBQueryBench() {
+        return ipbb_longArraysScalarConstUnrolledBQuery(qLong, dLong);
     }
 
-    static long ipbb_longArrysScalarConstUnrolledUnrolled(long[] q, long[] d) {
-        long acc0, acc1, acc2, acc3;
-        {
-            long estimatedDist0 = q[0] & d[0];
-            int subRet0 = Long.bitCount(estimatedDist0);
-            long estimatedDist1 = q[1] & d[1];
-            int subRet1 = Long.bitCount(estimatedDist1);
-            long estimatedDist2 = q[2] & d[2];
-            int subRet2 = Long.bitCount(estimatedDist2);
-            long estimatedDist3 = q[3] & d[3];
-            int subRet3 = Long.bitCount(estimatedDist3);
-            long estimatedDist4 = q[4] & d[4];
-            int subRet4 = Long.bitCount(estimatedDist4);
-            long estimatedDist5 = q[5] & d[5];
-            int subRet5 = Long.bitCount(estimatedDist5);
-            acc0 = (subRet0 + subRet1 + subRet2 + subRet3 + subRet4 + subRet5) << 0;
+    static long ipbb_longArraysScalarConstUnrolledBQuery(long[] q, long[] d) {
+        int acc0 = 0, acc1 = 0, acc2 = 0, acc3 = 0;
+        int i = 0;
+        for (; i < d.length; i++) {
+            acc0 += Long.bitCount(q[i] & d[i]);
+            acc1 += Long.bitCount(q[i + d.length] & d[i]);
+            acc2 += Long.bitCount(q[i + 2 * d.length] & d[i]);
+            acc3 += Long.bitCount(q[i + 3 * d.length] & d[i]);
         }
-        {
-            long estimatedDist0 = q[6 + 0] & d[0];
-            int subRet0 = Long.bitCount(estimatedDist0);
-            long estimatedDist1 = q[6 + 1] & d[1];
-            int subRet1 = Long.bitCount(estimatedDist1);
-            long estimatedDist2 = q[6 + 2] & d[2];
-            int subRet2 = Long.bitCount(estimatedDist2);
-            long estimatedDist3 = q[6 + 3] & d[3];
-            int subRet3 = Long.bitCount(estimatedDist3);
-            long estimatedDist4 = q[6 + 4] & d[4];
-            int subRet4 = Long.bitCount(estimatedDist4);
-            long estimatedDist5 = q[6 + 5] & d[5];
-            int subRet5 = Long.bitCount(estimatedDist5);
-            acc1 = (subRet0 + subRet1 + subRet2 + subRet3 + subRet4 + subRet5) << 1;
+        return acc0 + (acc1 << 1) + (acc2 << 2) + (acc3 << 3);
+    }
+
+    @Benchmark
+    public long ipbb_byteLongArraysScalarConstUnrolledBQueryBench() {
+        return ipbb_byteLongArraysScalarConstUnrolledBQuery(qBytes, dBytes);
+    }
+
+    static long ipbb_byteLongArraysScalarConstUnrolledBQuery(byte[] q, byte[] d) {
+        int r = 0;
+        int subRet0 = 0;
+        int subRet1 = 0;
+        int subRet2 = 0;
+        int subRet3 = 0;
+        for (final int upperBound = d.length & -Long.BYTES; r < upperBound; r += Long.BYTES) {
+            final long dLong = (long) BitUtil.VH_NATIVE_LONG.get(d, r);
+            subRet0 +=
+              Long.bitCount(
+                (long) BitUtil.VH_NATIVE_LONG.get(q, r)
+                  & dLong);
+            subRet1 +=
+              Long.bitCount(
+                (long) BitUtil.VH_NATIVE_LONG.get(q, r + d.length)
+                  & dLong);
+            subRet2 +=
+              Long.bitCount(
+                (long) BitUtil.VH_NATIVE_LONG.get(q, r + 2 * d.length)
+                  & dLong);
+            subRet3 +=
+              Long.bitCount(
+                (long) BitUtil.VH_NATIVE_LONG.get(q, r + 3 * d.length)
+                  & dLong);
         }
-        {
-            long estimatedDist0 = q[2 * 6 + 0] & d[0];
-            int subRet0 = Long.bitCount(estimatedDist0);
-            long estimatedDist1 = q[2 * 6 + 1] & d[1];
-            int subRet1 = Long.bitCount(estimatedDist1);
-            long estimatedDist2 = q[2 * 6 + 2] & d[2];
-            int subRet2 = Long.bitCount(estimatedDist2);
-            long estimatedDist3 = q[2 * 6 + 3] & d[3];
-            int subRet3 = Long.bitCount(estimatedDist3);
-            long estimatedDist4 = q[2 * 6 + 4] & d[4];
-            int subRet4 = Long.bitCount(estimatedDist4);
-            long estimatedDist5 = q[2 * 6 + 5] & d[5];
-            int subRet5 = Long.bitCount(estimatedDist5);
-            acc2 = (subRet0 + subRet1 + subRet2 + subRet3 + subRet4 + subRet5) << 2;
+        for (; r < d.length; r++) {
+            subRet0 += Integer.bitCount((q[r] & d[r]) & 0xFF);
+            subRet1 += Integer.bitCount((q[r + d.length] & d[r]) & 0xFF);
+            subRet2 += Integer.bitCount((q[r + d.length * 2] & d[r]) & 0xFF);
+            subRet3 += Integer.bitCount((q[r + d.length * 3] & d[r]) & 0xFF);
         }
-        {
-            long estimatedDist0 = q[3* 6 + 0] & d[0];
-            int subRet0 = Long.bitCount(estimatedDist0);
-            long estimatedDist1 = q[3 * 6 + 1] & d[1];
-            int subRet1 = Long.bitCount(estimatedDist1);
-            long estimatedDist2 = q[3 * 6 + 2] & d[2];
-            int subRet2 = Long.bitCount(estimatedDist2);
-            long estimatedDist3 = q[3 * 6 + 3] & d[3];
-            int subRet3 = Long.bitCount(estimatedDist3);
-            long estimatedDist4 = q[3 * 6 + 4] & d[4];
-            int subRet4 = Long.bitCount(estimatedDist4);
-            long estimatedDist5 = q[3 * 6 + 5] & d[5];
-            int subRet5 = Long.bitCount(estimatedDist5);
-            acc3 = (subRet0 + subRet1 + subRet2 + subRet3 + subRet4 + subRet5) << 3;
-        }
-        return acc0 + acc1 + acc2 + acc3;
+        return subRet0 + (subRet1 << 1) + (subRet2 << 2) + (subRet3 << 3);
     }
 
     @Benchmark
