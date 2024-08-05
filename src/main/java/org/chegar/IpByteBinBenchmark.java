@@ -84,7 +84,6 @@ public class IpByteBinBenchmark {
          test.setup();
      }
 
-    @Benchmark
     public long ipbb_longArraysScalarBench() {
         return ipbb_longArraysScalar(qLong, dLong, B);
     }
@@ -140,70 +139,6 @@ public class IpByteBinBenchmark {
             subRet3 += Integer.bitCount((q[r + d.length * 3] & d[r]) & 0xFF);
         }
         return subRet0 + (subRet1 << 1) + (subRet2 << 2) + (subRet3 << 3);
-    }
-
-
-    //@Benchmark
-    public long ipbb_longArraysScalarConstBench() {
-        return ipbb_longArraysScalarConst(qLong, dLong);
-    }
-
-    // Using constants, for B_QUERY and B, give 2x perf
-    // observation: no vectorization, popcnt yes, but on rbx etc, 64 bits at a time.
-    //  all loops unrolled. 4x6 popcnts directly
-    static long ipbb_longArraysScalarConst(long[] q, long[] d) {
-        long ret = 0;
-        for (int i = 0; i < B_QUERY; i++) {
-            long subRet = 0;
-            for (int j = 0; j < 6; j++) { // size: 6
-                long estimatedDist = q[i * 6 + j] & d[j];
-                subRet += Long.bitCount(estimatedDist);
-            }
-            ret += subRet << i;
-        }
-        return ret;
-    }
-
-    //@Benchmark
-    public long ipbb_longArraysScalarConstUnrolledBench() {
-        return ipbb_longArraysScalarConstUnrolled(qLong, dLong);
-    }
-
-    static long ipbb_longArraysScalarConstUnrolled(long[] q, long[] d) {
-        long ret = 0;
-        for (int i = 0; i < B_QUERY; i++) {
-            long estimatedDist0 = q[i * 6 + 0] & d[0];
-            int subRet0 = Long.bitCount(estimatedDist0);
-            long estimatedDist1 = q[i * 6 + 1] & d[1];
-            int subRet1 = Long.bitCount(estimatedDist1);
-            long estimatedDist2 = q[i * 6 + 2] & d[2];
-            int subRet2 = Long.bitCount(estimatedDist2);
-            long estimatedDist3 = q[i * 6 + 3] & d[3];
-            int subRet3 = Long.bitCount(estimatedDist3);
-            long estimatedDist4 = q[i * 6 + 4] & d[4];
-            int subRet4 = Long.bitCount(estimatedDist4);
-            long estimatedDist5 = q[i * 6 + 5] & d[5];
-            int subRet5 = Long.bitCount(estimatedDist5);
-            ret += (subRet0 + subRet1 + subRet2 + subRet3 + subRet4 + subRet5) << i;
-        }
-        return ret;
-    }
-
-    @Benchmark
-    public long ipbb_longArraysScalarConstUnrolledBQueryBench() {
-        return ipbb_longArraysScalarConstUnrolledBQuery(qLong, dLong);
-    }
-
-    static long ipbb_longArraysScalarConstUnrolledBQuery(long[] q, long[] d) {
-        int acc0 = 0, acc1 = 0, acc2 = 0, acc3 = 0;
-        int i = 0;
-        for (; i < d.length; i++) {
-            acc0 += Long.bitCount(q[i] & d[i]);
-            acc1 += Long.bitCount(q[i + d.length] & d[i]);
-            acc2 += Long.bitCount(q[i + 2 * d.length] & d[i]);
-            acc3 += Long.bitCount(q[i + 3 * d.length] & d[i]);
-        }
-        return acc0 + (acc1 << 1) + (acc2 << 2) + (acc3 << 3);
     }
 
     @Benchmark
@@ -656,21 +591,6 @@ public class IpByteBinBenchmark {
     void sanity() {
         final long expected = ipbb_longArraysScalarBench();
 
-//        if (ipByteBinConstLongBench() != expected) {
-//            throw new AssertionError("expected:" + expected + " != ipByteBinConstLongBench:" + ipByteBinConstLongBench());
-//        }
-//        if (ipByteBinConstUnrolledLongBench() != expected) {
-//            throw new AssertionError("expected:" + expected + " != ipByteBinConstUnrolledLongBench:" + ipByteBinConstUnrolledLongBench());
-//        }
-//        if (ipByteBinConstUnrolledUnrolledLongBench() != expected) {
-//            throw new AssertionError("expected:" + expected + " != ipByteBinConstUnrolledUnrolledLongBench:" + ipByteBinConstUnrolledUnrolledLongBench());
-//        }
-//        if (ipByteBinByteBench() != expected) {
-//            throw new AssertionError("expected:" + expected + " != ipByteBinByteBench:" + ipByteBinByteBench());
-//        }
-//        if (ipbb_byteArraysPanamaBench() != expected) {
-//            throw new AssertionError("expected:" + expected + " != ipbb_byteArraysPanamaBench:" + ipbb_byteArraysPanamaBench());
-//        }
         if (ipbb_byteArraysPanamaBench2() != expected) {
             throw new AssertionError("expected:" + expected + " != ipbb_byteArraysPanamaBench2:" + ipbb_byteArraysPanamaBench2());
         }
