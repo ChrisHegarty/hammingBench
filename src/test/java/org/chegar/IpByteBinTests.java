@@ -20,7 +20,7 @@ public class IpByteBinTests {
     Random random = new Random();
 
     static Stream<Integer> dimsProvider() {
-        return Stream.of(8, 136, 384, 512, 768, 1024, 1536, 2048, 2056, 2066, 4096); //, 5000);
+        return Stream.of(8, 128, 136, 384, 512, 768, 1024, 1536, 2048, 2056, 2066, 4096); //, 5000);
     }
 
     @ParameterizedTest
@@ -122,6 +122,8 @@ public class IpByteBinTests {
                 .filter(met -> (met.getParameters()[0].getType() == byte[].class) && (met.getParameters()[1].getType() == byte[].class))
                 .filter(met -> !met.getName().equals("ipByteBinBytePanWags")) // skip for now
                 .filter(met -> !met.getName().equals("ipByteBinBytePanWideCount")) // skip for now
+                //.filter(met -> !met.getName().equals("ipbb_byteArraysScalarConst")) // skip for now
+                .filter(met -> !met.getName().equals("ipbb_byteArraysScalarConstUnrolledNEW")) // skip for now
                 .toList();
     }
 }

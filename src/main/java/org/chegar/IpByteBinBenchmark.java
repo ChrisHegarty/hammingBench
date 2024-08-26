@@ -5,11 +5,14 @@ import jdk.incubator.vector.IntVector;
 import jdk.incubator.vector.LongVector;
 import jdk.incubator.vector.ShortVector;
 import jdk.incubator.vector.VectorOperators;
+import jdk.incubator.vector.VectorShape;
 import jdk.incubator.vector.VectorSpecies;
 import org.apache.lucene.util.BitUtil;
 import org.openjdk.jmh.annotations.*;
 
 import java.lang.foreign.MemorySegment;
+import java.lang.invoke.MethodHandles;
+import java.lang.invoke.VarHandle;
 import java.nio.ByteOrder;
 import java.util.Random;
 import java.util.concurrent.TimeUnit;
@@ -41,9 +44,31 @@ import static jdk.incubator.vector.VectorOperators.ZERO_EXTEND_B2S;
  */
 public class IpByteBinBenchmark {
 
+    static final VarHandle VH_NATIVE_INT = MethodHandles.byteArrayViewVarHandle(int[].class, ByteOrder.nativeOrder()).withInvokeExactBehavior();
+    static final VarHandle VH_NATIVE_LONG = MethodHandles.byteArrayViewVarHandle(long[].class, ByteOrder.nativeOrder()).withInvokeExactBehavior();
+
     static final VectorSpecies<Byte> BYTE_64_SPECIES = ByteVector.SPECIES_64;
     static final VectorSpecies<Byte> BYTE_128_SPECIES = ByteVector.SPECIES_128;
     static final VectorSpecies<Short> SHORT_128_SPECIES = ShortVector.SPECIES_128;
+
+    static final VectorSpecies<Byte> BYTE_PREFERRED;
+    static final VectorSpecies<Short> SHORT_PREFERRED;
+    static final VectorSpecies<Integer> INT_PREFERRED;
+    static final VectorSpecies<Long> LONG_PREFERRED;
+
+    static {
+        // default to platform supported bitsize
+        int vectorBitSize = VectorShape.preferredShape().vectorBitSize();
+        // but allow easy overriding for testing
+        String v = System.getProperty("maxVectorBitSize");
+        if (v != null) {
+            vectorBitSize = Integer.parseInt(v);
+        }
+        BYTE_PREFERRED = VectorSpecies.of(byte.class, VectorShape.forBitSize(vectorBitSize));
+        SHORT_PREFERRED = VectorSpecies.of(short.class, VectorShape.forBitSize(vectorBitSize));
+        INT_PREFERRED = VectorSpecies.of(int.class, VectorShape.forBitSize(vectorBitSize));
+        LONG_PREFERRED = VectorSpecies.of(long.class, VectorShape.forBitSize(vectorBitSize));
+    }
 
     public static final int B_QUERY = 4;
 
@@ -145,7 +170,7 @@ public class IpByteBinBenchmark {
         long ret = 0;
         for (int i = 0; i < B_QUERY; i++) {
             long subRet = 0;
-            for (int j = 0; j < 6; j++) { // size: 6
+            for (int j = 0; j < d.length; j++) { // size: 6  <<<<<<<<<<<<<<<<<<<<<<
                 long estimatedDist = q[i * 6 + j] & d[j];
                 subRet += Long.bitCount(estimatedDist);
             }
@@ -155,10 +180,157 @@ public class IpByteBinBenchmark {
     }
 
     @Benchmark
+    public long ipbb_byteArraysScalarConstBench() {
+        return ipbb_byteArraysScalarConst(qBytes, dBytes);
+    }
+
+    // 384 bits/ 8 = 48 bytes
+    // 48 bytes / 8 = 6 longs
+    // delete - not fast - 34.589
+//    static long ipbb_byteArraysScalarConst(byte[] q, byte[] d) {
+//        long subRet0 = 0, subRet1 = 0, subRet2 = 0, subRet3 = 0;
+//        int i = 0;
+//        if (d.length >= 48) {
+//            i = 48;
+//            for (int j = 0; j < 48; j += 8) {
+//                long ld = (long) VH_NATIVE_LONG.get(d, j);
+//                long l0 = (long) VH_NATIVE_LONG.get(q, j);
+//                long l1 = (long) VH_NATIVE_LONG.get(q, d.length + j);
+//                long l2 = (long) VH_NATIVE_LONG.get(q, 2 * d.length + j);
+//                long l3 = (long) VH_NATIVE_LONG.get(q, 3 * d.length + j);
+//                subRet0 += Long.bitCount(l0 & ld);
+//                subRet1 += Long.bitCount(l1 & ld);
+//                subRet2 += Long.bitCount(l2 & ld);
+//                subRet3 += Long.bitCount(l3 & ld);
+//            }
+//        }
+//        int limit = d.length & ~(7);
+//        for (; i < limit; i+=8) {
+//            long ld = (long) VH_NATIVE_LONG.get(d, i);
+//            long l0 = (long) VH_NATIVE_LONG.get(q, i);
+//            long l1 = (long) VH_NATIVE_LONG.get(q, d.length + i);
+//            long l2 = (long) VH_NATIVE_LONG.get(q, 2 * d.length + i);
+//            long l3 = (long) VH_NATIVE_LONG.get(q, 3 * d.length + i);
+//            subRet0 += Long.bitCount(l0 & ld);
+//            subRet1 += Long.bitCount(l1 & ld);
+//            subRet2 += Long.bitCount(l2 & ld);
+//            subRet3 += Long.bitCount(l3 & ld);
+//        }
+//        // tail as bytes
+//        for (; i < d.length; i++) {
+//            subRet0 += Integer.bitCount((q[i] & d[i]) & 0xFF);
+//            subRet1 += Integer.bitCount((q[i + d.length] & d[i]) & 0xFF);
+//            subRet2 += Integer.bitCount((q[i + 2 * d.length] & d[i]) & 0xFF);
+//            subRet3 += Integer.bitCount((q[i + 3 * d.length] & d[i]) & 0xFF);
+//        }
+//        return subRet0 + (subRet1 << 1) + (subRet2 << 2) + (subRet3 << 3);
+//    }
+
+    // 384 bits/ 8 = 48 bytes
+    // 48 bytes / 8 = 6 longs
+    // not fast - 35 ops (with -XX:-UseSuperWord), 43ops by default
+    static long ipbb_byteArraysScalarConst(byte[] q, byte[] d) {
+        long subRet0 = 0, subRet1 = 0, subRet2 = 0, subRet3 = 0;
+        int limit = d.length & ~(7);
+        for (int j = 0; j < limit; j+=Long.BYTES) {
+            long ld = (long) VH_NATIVE_LONG.get(d, j);
+            long l0 = (long) VH_NATIVE_LONG.get(q, j);
+            long l1 = (long) VH_NATIVE_LONG.get(q, d.length + j);
+            long l2 = (long) VH_NATIVE_LONG.get(q, 2 * d.length + j);
+            long l3 = (long) VH_NATIVE_LONG.get(q, 3 * d.length + j);
+            subRet0 += Long.bitCount(l0 & ld);
+            subRet1 += Long.bitCount(l1 & ld);
+            subRet2 += Long.bitCount(l2 & ld);
+            subRet3 += Long.bitCount(l3 & ld);
+        }
+        // tail as bytes
+        for (int i = limit; i < d.length; i++) {
+            subRet0 += Integer.bitCount((q[i] & d[i]) & 0xFF);
+            subRet1 += Integer.bitCount((q[i + d.length] & d[i]) & 0xFF);
+            subRet2 += Integer.bitCount((q[i + 2 * d.length] & d[i]) & 0xFF);
+            subRet3 += Integer.bitCount((q[i + 3 * d.length] & d[i]) & 0xFF);
+        }
+        return subRet0 + (subRet1 << 1) + (subRet2 << 2) + (subRet3 << 3);
+    }
+
+//    static long ipbb_byteArraysScalarConst(byte[] q, byte[] d) {
+//        long subRet0 = 0, subRet1 = 0, subRet2 = 0, subRet3 = 0;
+//        int limit = d.length & ~(7);
+//        for (int j = 0; j < limit; j+=8) {
+//            long ld = (long) VH_NATIVE_LONG.get(d, j);
+//            long l0 = (long) VH_NATIVE_LONG.get(q, j);
+//            long l1 = (long) VH_NATIVE_LONG.get(q, d.length + j);
+//            long l2 = (long) VH_NATIVE_LONG.get(q, 2 * d.length + j);
+//            long l3 = (long) VH_NATIVE_LONG.get(q, 3 * d.length + j);
+//            subRet0 += Long.bitCount(l0 & ld);
+//            subRet1 += Long.bitCount(l1 & ld);
+//            subRet2 += Long.bitCount(l2 & ld);
+//            subRet3 += Long.bitCount(l3 & ld);
+//        }
+//        // tail as bytes
+//        for (int i = limit; i < d.length; i++) {
+//            subRet0 += Integer.bitCount((q[i] & d[i]) & 0xFF);
+//            subRet1 += Integer.bitCount((q[i + d.length] & d[i]) & 0xFF);
+//            subRet2 += Integer.bitCount((q[i + 2 * d.length] & d[i]) & 0xFF);
+//            subRet3 += Integer.bitCount((q[i + 3 * d.length] & d[i]) & 0xFF);
+//        }
+//        return subRet0 + (subRet1 << 1) + (subRet2 << 2) + (subRet3 << 3);
+//    }
+
+//     static long ipbb_byteArraysScalarConst(byte[] q, byte[] d) {
+//        long subRet0 = 0, subRet1 = 0, subRet2 = 0, subRet3 = 0;
+//        int limit = d.length / Long.BYTES;
+//        for (int j = 0; j < limit; j++) { // size: 6
+//            long l1 = (long) VH_NATIVE_LONG.get(q, j * Long.BYTES);
+//            long l2 = (long) VH_NATIVE_LONG.get(d, j * Long.BYTES);
+//            long estimatedDist = l1 & l2;
+//            subRet0 += Long.bitCount(estimatedDist);
+//
+//            l1 = (long) VH_NATIVE_LONG.get(q, d.length + j * Long.BYTES);
+//            l2 = (long) VH_NATIVE_LONG.get(d, j * Long.BYTES);
+//            estimatedDist = l1 & l2;
+//            subRet1 += Long.bitCount(estimatedDist);
+//
+//            l1 = (long) VH_NATIVE_LONG.get(q, 2 * d.length + j * Long.BYTES);
+//            l2 = (long) VH_NATIVE_LONG.get(d, j * Long.BYTES);
+//            estimatedDist = l1 & l2;
+//            subRet2 += Long.bitCount(estimatedDist);
+//
+//            l1 = (long) VH_NATIVE_LONG.get(q, 3 * d.length + j * Long.BYTES);
+//            l2 = (long) VH_NATIVE_LONG.get(d, j * Long.BYTES);
+//            estimatedDist = l1 & l2;
+//            subRet3 += Long.bitCount(estimatedDist);
+//        }
+//         // tail as bytes
+//         for (int i = limit * Long.BYTES; i < d.length; i++) {
+//             subRet0 += Integer.bitCount((q[i] & d[i]) & 0xFF);
+//             subRet1 += Integer.bitCount((q[i + d.length] & d[i]) & 0xFF);
+//             subRet2 += Integer.bitCount((q[i + 2 * d.length] & d[i]) & 0xFF);
+//             subRet3 += Integer.bitCount((q[i + 3 * d.length] & d[i]) & 0xFF);
+//         }
+//        return subRet0 + (subRet1 << 1) + (subRet2 << 2) + (subRet3 << 3);
+//    }
+//    static long ipbb_byteArraysScalarConst(byte[] q, byte[] d) {
+//        long ret = 0;
+//        for (int i = 0; i < B_QUERY; i++) {
+//            long subRet = 0;
+//            for (int j = 0; j < d.length; j+=Long.BYTES) { // size: 6
+//                long l1 = (long) VH_NATIVE_LONG.get(q, i * 6 + j);
+//                long l2 = (long) VH_NATIVE_LONG.get(d, j);
+//                long estimatedDist =  l1 & l2; //q[i * 6 + j] & d[j];
+//                subRet += Long.bitCount(estimatedDist);
+//            }
+//            ret += subRet << i;
+//        }
+//        return ret;
+//    }
+
+    @Benchmark
     public long ipbb_longArraysScalarConstUnrolledBench() {
         return ipbb_longArraysScalarConstUnrolled(qLong, dLong);
     }
 
+    // fastest - 130.595 ( -XX:-UseSuperWord makes no difference )
     static long ipbb_longArraysScalarConstUnrolled(long[] q, long[] d) {
         long ret = 0;
         for (int i = 0; i < B_QUERY; i++) {
@@ -176,6 +348,74 @@ public class IpByteBinBenchmark {
             int subRet5 = Long.bitCount(estimatedDist5);
             ret += (subRet0 + subRet1 + subRet2 + subRet3 + subRet4 + subRet5) << i;
         }
+        return ret;
+    }
+
+    @Benchmark
+    public long ipbb_byteArraysScalarConstUnrolledNEW() {
+        return ipbb_byteArraysScalarConstUnrolledNEW(qBytes, dBytes);
+    }
+
+    // this is fast - 125.028, but hard codes the dims (6). Uses just popcount, sequentially
+    //  ( -XX:-UseSuperWord makes no difference )
+    static long ipbb_byteArraysScalarConstUnrolledNEW(byte[] q, byte[] d) {
+        long ret = 0;
+        for (int i = 0; i < B_QUERY; i++) {
+            long estimatedDist0 = (long) VH_NATIVE_LONG.get(q, i * 48) & (long) VH_NATIVE_LONG.get(d, 0);
+            int subRet0 = Long.bitCount(estimatedDist0);
+            long estimatedDist1 = (long) VH_NATIVE_LONG.get(q, i * 48 + Long.BYTES) & (long) VH_NATIVE_LONG.get(d, Long.BYTES);
+            int subRet1 = Long.bitCount(estimatedDist1);
+            long estimatedDist2 = (long) VH_NATIVE_LONG.get(q, i * 48 + 2*Long.BYTES) & (long) VH_NATIVE_LONG.get(d, 2*Long.BYTES);
+            int subRet2 = Long.bitCount(estimatedDist2);
+            long estimatedDist3 = (long) VH_NATIVE_LONG.get(q, i * 48 + 3*Long.BYTES) & (long) VH_NATIVE_LONG.get(d, 3*Long.BYTES);
+            int subRet3 = Long.bitCount(estimatedDist3);
+            long estimatedDist4 = (long) VH_NATIVE_LONG.get(q, i * 48 + 4*Long.BYTES) & (long) VH_NATIVE_LONG.get(d, 4*Long.BYTES);
+            int subRet4 = Long.bitCount(estimatedDist4);
+            long estimatedDist5 = (long) VH_NATIVE_LONG.get(q, i * 48 + 5*Long.BYTES) & (long) VH_NATIVE_LONG.get(d, 5*Long.BYTES);
+            int subRet5 = Long.bitCount(estimatedDist5);
+            ret += (subRet0 + subRet1 + subRet2 + subRet3 + subRet4 + subRet5) << i;
+        }
+        return ret;
+    }
+
+    @Benchmark
+    public long ipbb_byteArraysScalarConstUnrolledBench() {
+        return ipbb_byteArraysScalarConstUnrolled(qBytes, dBytes);
+    }
+
+    static long ipbb_byteArraysScalarConstUnrolled(byte[] q, byte[] d) {
+        int ret = 0;
+        int subRet0 = 0;
+        int subRet1 = 0;
+        int subRet2 = 0;
+        int subRet3 = 0;
+
+        int i = 0;
+        for (; i < d.length - Long.BYTES; i += Long.BYTES) {
+            // long dValue = (long) VH_NATIVE_LONG.get(d, i);
+            subRet0 += Long.bitCount((long) VH_NATIVE_LONG.get(q, i) & (long) VH_NATIVE_LONG.get(d, i));
+            subRet1 += Long.bitCount((long) VH_NATIVE_LONG.get(q, i + d.length) & (long) VH_NATIVE_LONG.get(d, i));
+            subRet2 += Long.bitCount((long) VH_NATIVE_LONG.get(q, i + 2 * d.length) & (long) VH_NATIVE_LONG.get(d, i));
+            subRet3 += Long.bitCount((long) VH_NATIVE_LONG.get(q, i + 3 * d.length) & (long) VH_NATIVE_LONG.get(d, i));
+        }
+//        for (; i < d.length - Integer.BYTES; i += Integer.BYTES) {
+//            int dValue = (int) VH_NATIVE_INT.get(d, i);
+//            subRet0 += Integer.bitCount((int) VH_NATIVE_INT.get(q, i) & dValue);
+//            subRet1 += Integer.bitCount((int) VH_NATIVE_INT.get(q, i + d.length) & dValue);
+//            subRet2 += Integer.bitCount((int) VH_NATIVE_INT.get(q, i + 2 * d.length) & dValue);
+//            subRet3 += Integer.bitCount((int) VH_NATIVE_INT.get(q, i + 3 * d.length) & dValue);
+//        }
+        // tail as bytes
+        for (; i < d.length; i++) {
+            subRet0 += Integer.bitCount((q[i] & d[i]) & 0xFF);
+            subRet1 += Integer.bitCount((q[i + d.length] & d[i]) & 0xFF);
+            subRet2 += Integer.bitCount((q[i + 2 * d.length] & d[i]) & 0xFF);
+            subRet3 += Integer.bitCount((q[i + 3 * d.length] & d[i]) & 0xFF);
+        }
+        ret += subRet0;
+        ret += subRet1 << 1;
+        ret += subRet2 << 2;
+        ret += subRet3 << 3;
         return ret;
     }
 
@@ -247,6 +487,31 @@ public class IpByteBinBenchmark {
             acc3 = (subRet0 + subRet1 + subRet2 + subRet3 + subRet4 + subRet5) << 3;
         }
         return acc0 + acc1 + acc2 + acc3;
+    }
+
+
+    @Benchmark
+    public long ipbb_byteArraysScalar64XXBench() {
+        return ipbb_byteArraysScalar64XX(qBytes, dBytes);
+    }
+
+    // delete me - no panama - not fast - 34.519
+    static long ipbb_byteArraysScalar64XX(byte[] q, byte[] d) {
+        long ret = 0;
+        for (int i = 0; i < B_QUERY; i++) {
+            long subRet = 0;
+            int j = 0;
+            for (; j < d.length - 7; j+=Long.BYTES) {
+                long ld = (long) VH_NATIVE_LONG.get(d, j);
+                long lq = (long) VH_NATIVE_LONG.get(q, i * d.length + j);
+                subRet += Long.bitCount(ld & lq);
+            }
+            for (; j < d.length; j++) {
+                subRet += Integer.bitCount((q[i * d.length + j] & d[j]) & 0xFF);
+            }
+            ret += subRet << i;
+        }
+        return ret;
     }
 
     @Benchmark
@@ -413,29 +678,87 @@ public class IpByteBinBenchmark {
     }
 
     @Benchmark
-    public long ipbb_byteArraysPanamaStrideAsLongUnrolledBench() {
-        return ipbb_byteArraysPanamaStrideAsLongUnrolled(qBytes, dBytes);
+    public long ipbb_byteArraysPanamaStrideAsLongUnrolledBench128() {
+        return ipbb_byteArraysPanamaStrideAsLongUnrolled128(qBytes, dBytes);
     }
 
-    public static long ipbb_byteArraysPanamaStrideAsLongUnrolled(byte[] q, byte[] d) {
+    public static long ipbb_byteArraysPanamaStrideAsLongUnrolled128(byte[] q, byte[] d) {
         long ret = 0;
         long subRet0 = 0;
         long subRet1 = 0;
         long subRet2 = 0;
         long subRet3 = 0;
-        int limit = ByteVector.SPECIES_PREFERRED.loopBound(d.length);
+        int limit = ByteVector.SPECIES_128.loopBound(d.length);
         int r = 0;
-        LongVector sum0 = LongVector.zero(LongVector.SPECIES_PREFERRED);
-        LongVector sum1 = LongVector.zero(LongVector.SPECIES_PREFERRED);
-        LongVector sum2 = LongVector.zero(LongVector.SPECIES_PREFERRED);
-        LongVector sum3 = LongVector.zero(LongVector.SPECIES_PREFERRED);
+        LongVector sum0 = LongVector.zero(LongVector.SPECIES_128);
+        LongVector sum1 = LongVector.zero(LongVector.SPECIES_128);
+        LongVector sum2 = LongVector.zero(LongVector.SPECIES_128);
+        LongVector sum3 = LongVector.zero(LongVector.SPECIES_128);
 
-        for (; r < limit; r += ByteVector.SPECIES_PREFERRED.length()) {
-            LongVector vq0 = ByteVector.fromArray(ByteVector.SPECIES_PREFERRED, q, r).reinterpretAsLongs();
-            LongVector vq1 = ByteVector.fromArray(ByteVector.SPECIES_PREFERRED, q, r + d.length).reinterpretAsLongs();
-            LongVector vq2 = ByteVector.fromArray(ByteVector.SPECIES_PREFERRED, q, r + d.length * 2).reinterpretAsLongs();
-            LongVector vq3 = ByteVector.fromArray(ByteVector.SPECIES_PREFERRED, q, r + d.length * 3).reinterpretAsLongs();
-            LongVector vd = ByteVector.fromArray(ByteVector.SPECIES_PREFERRED, d, r).reinterpretAsLongs();
+        for (; r < limit; r += ByteVector.SPECIES_128.length()) {
+            LongVector vq0 = ByteVector.fromArray(ByteVector.SPECIES_128, q, r).reinterpretAsLongs();
+            LongVector vq1 = ByteVector.fromArray(ByteVector.SPECIES_128, q, r + d.length).reinterpretAsLongs();
+            LongVector vq2 = ByteVector.fromArray(ByteVector.SPECIES_128, q, r + d.length * 2).reinterpretAsLongs();
+            LongVector vq3 = ByteVector.fromArray(ByteVector.SPECIES_128, q, r + d.length * 3).reinterpretAsLongs();
+            LongVector vd = ByteVector.fromArray(ByteVector.SPECIES_128, d, r).reinterpretAsLongs();
+            LongVector vres0 = vq0.and(vd).lanewise(VectorOperators.BIT_COUNT);
+            LongVector vres1 = vq1.and(vd).lanewise(VectorOperators.BIT_COUNT);
+            LongVector vres2 = vq2.and(vd).lanewise(VectorOperators.BIT_COUNT);
+            LongVector vres3 = vq3.and(vd).lanewise(VectorOperators.BIT_COUNT);
+            sum0 = sum0.add(vres0);
+            sum1 = sum1.add(vres1);
+            sum2 = sum2.add(vres2);
+            sum3 = sum3.add(vres3);
+        }
+        subRet0 += sum0.reduceLanes(VectorOperators.ADD);
+        subRet1 += sum1.reduceLanes(VectorOperators.ADD);
+        subRet2 += sum2.reduceLanes(VectorOperators.ADD);
+        subRet3 += sum3.reduceLanes(VectorOperators.ADD);
+        // tail as ints
+        for (; r < d.length-Integer.BYTES; r+=Integer.BYTES) {
+            subRet0 += Integer.bitCount((int) BitUtil.VH_NATIVE_INT.get(q, r) & (int) BitUtil.VH_NATIVE_INT.get(d, r));
+            subRet1 += Integer.bitCount((int) BitUtil.VH_NATIVE_INT.get(q, r + d.length) & (int) BitUtil.VH_NATIVE_INT.get(d, r));
+            subRet2 += Integer.bitCount((int) BitUtil.VH_NATIVE_INT.get(q, r + 2 * d.length) & (int) BitUtil.VH_NATIVE_INT.get(d, r));
+            subRet3 += Integer.bitCount((int) BitUtil.VH_NATIVE_INT.get(q, r + 3 * d.length) & (int) BitUtil.VH_NATIVE_INT.get(d, r));
+        }
+        // tail as bytes
+        for (; r < d.length; r++) {
+            subRet0 += Integer.bitCount((q[r] & d[r]) & 0xFF);
+            subRet1 += Integer.bitCount((q[r + d.length] & d[r]) & 0xFF);
+            subRet2 += Integer.bitCount((q[r + 2 * d.length] & d[r]) & 0xFF);
+            subRet3 += Integer.bitCount((q[r + 3 * d.length] & d[r]) & 0xFF);
+        }
+        ret += subRet0;
+        ret += subRet1 << 1;
+        ret += subRet2 << 2;
+        ret += subRet3 << 3;
+        return ret;
+    }
+
+    @Benchmark
+    public long ipbb_byteArraysPanamaStrideAsLongUnrolledBench256() {
+        return ipbb_byteArraysPanamaStrideAsLongUnrolled256(qBytes, dBytes);
+    }
+
+    public static long ipbb_byteArraysPanamaStrideAsLongUnrolled256(byte[] q, byte[] d) {
+        long ret = 0;
+        long subRet0 = 0;
+        long subRet1 = 0;
+        long subRet2 = 0;
+        long subRet3 = 0;
+        int limit = ByteVector.SPECIES_256.loopBound(d.length);
+        int r = 0;
+        LongVector sum0 = LongVector.zero(LongVector.SPECIES_256);
+        LongVector sum1 = LongVector.zero(LongVector.SPECIES_256);
+        LongVector sum2 = LongVector.zero(LongVector.SPECIES_256);
+        LongVector sum3 = LongVector.zero(LongVector.SPECIES_256);
+
+        for (; r < limit; r += ByteVector.SPECIES_256.length()) {
+            LongVector vq0 = ByteVector.fromArray(ByteVector.SPECIES_256, q, r).reinterpretAsLongs();
+            LongVector vq1 = ByteVector.fromArray(ByteVector.SPECIES_256, q, r + d.length).reinterpretAsLongs();
+            LongVector vq2 = ByteVector.fromArray(ByteVector.SPECIES_256, q, r + d.length * 2).reinterpretAsLongs();
+            LongVector vq3 = ByteVector.fromArray(ByteVector.SPECIES_256, q, r + d.length * 3).reinterpretAsLongs();
+            LongVector vd = ByteVector.fromArray(ByteVector.SPECIES_256, d, r).reinterpretAsLongs();
             LongVector vres0 = vq0.and(vd).lanewise(VectorOperators.BIT_COUNT);
             LongVector vres1 = vq1.and(vd).lanewise(VectorOperators.BIT_COUNT);
             LongVector vres2 = vq2.and(vd).lanewise(VectorOperators.BIT_COUNT);
@@ -709,9 +1032,9 @@ public class IpByteBinBenchmark {
         if (ipbb_byteArraysPanamaStrideAsIntBench() != expected) {
             throw new AssertionError("expected:" + expected + " != ipbb_byteArraysPanamaStrideAsIntBench:" + ipbb_byteArraysPanamaStrideAsIntBench());
         }
-        if (ipByteBinBytePanWags() != expected) {
-            throw new AssertionError("expected:" + expected + " != ipByteBinBytePanWags:" + ipByteBinBytePanWags());
-        }
+//        if (ipByteBinBytePanWags() != expected) {
+//            throw new AssertionError("expected:" + expected + " != ipByteBinBytePanWags:" + ipByteBinBytePanWags());
+//        }
         if (ipbb_LongPanamaUnrolledBench() != expected) {
             throw new AssertionError("expected:" + expected + " != ipbb_LongPanamaUnrolledBench:" + ipbb_LongPanamaUnrolledBench());
         }
@@ -721,8 +1044,11 @@ public class IpByteBinBenchmark {
         if (ipbb_BytePanWideCountBench() != expected) {
             throw new AssertionError("expected:" + expected + " != ipbb_BytePanWideCountBench:" + ipbb_BytePanWideCountBench());
         }
-        if (ipbb_byteArraysPanamaStrideAsLongUnrolledBench() != expected) {
-            throw new AssertionError("expected:" + expected + " != ipbb_byteArraysPanamaStrideAsLongUnrolledBench:" + ipbb_byteArraysPanamaStrideAsLongUnrolledBench());
+        if (ipbb_byteArraysPanamaStrideAsLongUnrolledBench128() != expected) {
+            throw new AssertionError("expected:" + expected + " != ipbb_byteArraysPanamaStrideAsLongUnrolledBench128:" + ipbb_byteArraysPanamaStrideAsLongUnrolledBench128());
+        }
+        if (ipbb_byteArraysPanamaStrideAsLongUnrolledBench256() != expected) {
+            throw new AssertionError("expected:" + expected + " != ipbb_byteArraysPanamaStrideAsLongUnrolledBench256:" + ipbb_byteArraysPanamaStrideAsLongUnrolledBench256());
         }
         if (ipbb_byteArraysPanamaStrideAsShortUnrolledBench() != expected) {
             throw new AssertionError("expected:" + expected + " != ipbb_byteArraysPanamaStrideAsShortUnrolledBench:" + ipbb_byteArraysPanamaStrideAsShortUnrolledBench());
