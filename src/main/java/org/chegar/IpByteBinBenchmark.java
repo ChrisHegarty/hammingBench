@@ -794,7 +794,7 @@ public class IpByteBinBenchmark {
     }
 
     @Benchmark
-    public long ipbb_byteArraysPanamaStrideAsShortUnrolledBench() {
+    public long ipbb_byteArraysPanamaStrideAsShortUnrolled128Bench() {
         return ipbb_byteArraysPanamaStrideAsShortUnrolled128(qBytes, dBytes);
     }
 
@@ -1050,8 +1050,8 @@ public class IpByteBinBenchmark {
         if (ipbb_byteArraysPanamaStrideAsLongUnrolledBench256() != expected) {
             throw new AssertionError("expected:" + expected + " != ipbb_byteArraysPanamaStrideAsLongUnrolledBench256:" + ipbb_byteArraysPanamaStrideAsLongUnrolledBench256());
         }
-        if (ipbb_byteArraysPanamaStrideAsShortUnrolledBench() != expected) {
-            throw new AssertionError("expected:" + expected + " != ipbb_byteArraysPanamaStrideAsShortUnrolledBench:" + ipbb_byteArraysPanamaStrideAsShortUnrolledBench());
+        if (ipbb_byteArraysPanamaStrideAsShortUnrolled128Bench() != expected) {
+            throw new AssertionError("expected:" + expected + " != ipbb_byteArraysPanamaStrideAsShortUnrolled128Bench:" + ipbb_byteArraysPanamaStrideAsShortUnrolled128Bench());
         }
     }
 }
