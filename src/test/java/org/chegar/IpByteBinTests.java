@@ -20,7 +20,7 @@ public class IpByteBinTests {
     Random random = new Random();
 
     static Stream<Integer> dimsProvider() {
-        return Stream.of(8, 128, 136, 384, 512, 768, 1024, 1536, 2048, 2056, 2066, 4096); //, 5000);
+        return Stream.of(8, 128, 136, 384, 511, 512, 513, 768, 1024, 1536, 2048, 2056, 2066, 4096); //, 5000);
     }
 
     @ParameterizedTest
