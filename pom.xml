@@ -50,7 +50,7 @@
         <!--
             Java source/target to use for compilation.
           -->
-        <javac.target>22</javac.target>
+        <javac.target>21</javac.target>
 
         <!--
             Name of the benchmark Uber-JAR to generate.
@@ -68,7 +68,10 @@
                     <compilerVersion>${javac.target}</compilerVersion>
                     <source>${javac.target}</source>
                     <target>${javac.target}</target>
-                    <compilerArgument>--add-modules=jdk.incubator.vector</compilerArgument>
+                    <compilerArgs>
+                        <compilerArg>--enable-preview</compilerArg>
+                        <compilerArg>--add-modules=jdk.incubator.vector</compilerArg>
+                    </compilerArgs>
                 </configuration>
             </plugin>
             <plugin>
@@ -76,7 +79,7 @@
                 <version>3.1.2</version>
                 <configuration>
                     <!-- <argLine>-XX:MaxVectorSize=16</argLine> -->
-                    <argLine>--add-modules=jdk.incubator.vector</argLine>
+                    <argLine>--enable-preview --add-modules=jdk.incubator.vector</argLine>
                 </configuration>
             </plugin>
             <plugin>

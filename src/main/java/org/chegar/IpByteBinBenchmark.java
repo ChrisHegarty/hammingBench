@@ -17,11 +17,12 @@ import java.nio.ByteOrder;
 import java.util.Random;
 import java.util.concurrent.TimeUnit;
 
+import static java.lang.foreign.ValueLayout.JAVA_BYTE;
 import static jdk.incubator.vector.VectorOperators.B2S;
 import static jdk.incubator.vector.VectorOperators.ZERO_EXTEND_B2S;
 
 // TODO: lower fork count to speedup dev iterations
-@Fork(value = 1, jvmArgsPrepend = {"--add-modules=jdk.incubator.vector"})
+@Fork(value = 1, jvmArgsPrepend = {"--enable-preview", "--add-modules=jdk.incubator.vector"})
 @Warmup(iterations = 3, time = 3)
 @Measurement(iterations = 5, time = 3)
 @BenchmarkMode(Mode.Throughput)
@@ -79,6 +80,8 @@ public class IpByteBinBenchmark {
     long[] dLong;
     byte[] qBytes;
     byte[] dBytes;
+    MemorySegment qSeg;
+    MemorySegment dSeg;
     int B; // == dims
 
     @Setup
@@ -102,7 +105,8 @@ public class IpByteBinBenchmark {
             dLong[i] = l;
             BitUtil.VH_NATIVE_LONG.set(dBytes, i * Long.BYTES, l);
         }
-
+        qSeg = MemorySegment.ofArray(qBytes);
+        dSeg = MemorySegment.ofArray(dBytes);
         sanity();
     }
 
@@ -678,6 +682,9 @@ public class IpByteBinBenchmark {
         return ret;
     }
 
+    private static final VectorSpecies<Byte> BYTE_SPECIES_128 = ByteVector.SPECIES_128;
+    private static final VectorSpecies<Byte> BYTE_SPECIES_256 = ByteVector.SPECIES_256;
+
     @Benchmark
     public long ipbb_byteArraysPanamaStrideAsLongUnrolled256Bench() {
         return ipbb_byteArraysPanamaStrideAsLongUnrolled256(qBytes, dBytes);
@@ -697,11 +704,11 @@ public class IpByteBinBenchmark {
             var sum2 = LongVector.zero(LongVector.SPECIES_256);
             var sum3 = LongVector.zero(LongVector.SPECIES_256);
             for (; i < limit; i += ByteVector.SPECIES_256.length()) {
-                var vq0 = ByteVector.fromArray(ByteVector.SPECIES_256, q, i).reinterpretAsLongs();
-                var vq1 = ByteVector.fromArray(ByteVector.SPECIES_256, q, i + d.length).reinterpretAsLongs();
-                var vq2 = ByteVector.fromArray(ByteVector.SPECIES_256, q, i + d.length * 2).reinterpretAsLongs();
-                var vq3 = ByteVector.fromArray(ByteVector.SPECIES_256, q, i + d.length * 3).reinterpretAsLongs();
-                var vd = ByteVector.fromArray(ByteVector.SPECIES_256, d, i).reinterpretAsLongs();
+                var vq0 = ByteVector.fromArray(BYTE_SPECIES_256, q, i).reinterpretAsLongs();
+                var vq1 = ByteVector.fromArray(BYTE_SPECIES_256, q, i + d.length).reinterpretAsLongs();
+                var vq2 = ByteVector.fromArray(BYTE_SPECIES_256, q, i + d.length * 2).reinterpretAsLongs();
+                var vq3 = ByteVector.fromArray(BYTE_SPECIES_256, q, i + d.length * 3).reinterpretAsLongs();
+                var vd = ByteVector.fromArray(BYTE_SPECIES_256, d, i).reinterpretAsLongs();
                 sum0 = sum0.add(vq0.and(vd).lanewise(VectorOperators.BIT_COUNT));
                 sum1 = sum1.add(vq1.and(vd).lanewise(VectorOperators.BIT_COUNT));
                 sum2 = sum2.add(vq2.and(vd).lanewise(VectorOperators.BIT_COUNT));
@@ -714,17 +721,17 @@ public class IpByteBinBenchmark {
         }
 
         if (d.length - i >= ByteVector.SPECIES_128.vectorByteSize()) {
-            int limit = ByteVector.SPECIES_128.loopBound(d.length);
             var sum0 = LongVector.zero(LongVector.SPECIES_128);
             var sum1 = LongVector.zero(LongVector.SPECIES_128);
             var sum2 = LongVector.zero(LongVector.SPECIES_128);
             var sum3 = LongVector.zero(LongVector.SPECIES_128);
+            int limit = ByteVector.SPECIES_128.loopBound(d.length);
             for (; i < limit; i += ByteVector.SPECIES_128.length()) {
-                var vq0 = ByteVector.fromArray(ByteVector.SPECIES_128, q, i).reinterpretAsLongs();
-                var vq1 = ByteVector.fromArray(ByteVector.SPECIES_128, q, i + d.length).reinterpretAsLongs();
-                var vq2 = ByteVector.fromArray(ByteVector.SPECIES_128, q, i + d.length * 2).reinterpretAsLongs();
-                var vq3 = ByteVector.fromArray(ByteVector.SPECIES_128, q, i + d.length * 3).reinterpretAsLongs();
-                var vd = ByteVector.fromArray(ByteVector.SPECIES_128, d, i).reinterpretAsLongs();
+                var vq0 = ByteVector.fromArray(BYTE_SPECIES_128, q, i).reinterpretAsLongs();
+                var vq1 = ByteVector.fromArray(BYTE_SPECIES_128, q, i + d.length).reinterpretAsLongs();
+                var vq2 = ByteVector.fromArray(BYTE_SPECIES_128, q, i + d.length * 2).reinterpretAsLongs();
+                var vq3 = ByteVector.fromArray(BYTE_SPECIES_128, q, i + d.length * 3).reinterpretAsLongs();
+                var vd = ByteVector.fromArray(BYTE_SPECIES_128, d, i).reinterpretAsLongs();
                 sum0 = sum0.add(vq0.and(vd).lanewise(VectorOperators.BIT_COUNT));
                 sum1 = sum1.add(vq1.and(vd).lanewise(VectorOperators.BIT_COUNT));
                 sum2 = sum2.add(vq2.and(vd).lanewise(VectorOperators.BIT_COUNT));
@@ -734,13 +741,6 @@ public class IpByteBinBenchmark {
             subRet1 += sum1.reduceLanes(VectorOperators.ADD);
             subRet2 += sum2.reduceLanes(VectorOperators.ADD);
             subRet3 += sum3.reduceLanes(VectorOperators.ADD);
-        }
-        // tail as ints
-        for (; i < d.length-Integer.BYTES; i+=Integer.BYTES) {
-            subRet0 += Integer.bitCount((int) BitUtil.VH_NATIVE_INT.get(q, i) & (int) BitUtil.VH_NATIVE_INT.get(d, i));
-            subRet1 += Integer.bitCount((int) BitUtil.VH_NATIVE_INT.get(q, i + d.length) & (int) BitUtil.VH_NATIVE_INT.get(d, i));
-            subRet2 += Integer.bitCount((int) BitUtil.VH_NATIVE_INT.get(q, i + 2 * d.length) & (int) BitUtil.VH_NATIVE_INT.get(d, i));
-            subRet3 += Integer.bitCount((int) BitUtil.VH_NATIVE_INT.get(q, i + 3 * d.length) & (int) BitUtil.VH_NATIVE_INT.get(d, i));
         }
         // tail as bytes
         for (; i < d.length; i++) {
@@ -752,6 +752,81 @@ public class IpByteBinBenchmark {
         return subRet0 + (subRet1 << 1) + (subRet2 << 2) + (subRet3 << 3);
     }
 
+    @Benchmark
+    public long ipbb_memSegmentPanamaStrideAsLongUnrolled256Bench() {
+        return ipbb_memSegmentPanamaStrideAsLongUnrolled256(qSeg, dSeg);
+    }
+
+    // just for testing
+    static long ipbb_memSegmentPanamaStrideAsLongUnrolled256Sanity(byte[] q, byte[] d) {
+        return ipbb_memSegmentPanamaStrideAsLongUnrolled256(MemorySegment.ofArray(q), MemorySegment.ofArray(d));
+    }
+
+    static final ByteOrder NO = ByteOrder.nativeOrder();
+
+    static long ipbb_memSegmentPanamaStrideAsLongUnrolled256(MemorySegment q, MemorySegment d) {
+        long subRet0 = 0;
+        long subRet1 = 0;
+        long subRet2 = 0;
+        long subRet3 = 0;
+        int i = 0;
+        final int dSize = (int) d.byteSize();
+
+        if (dSize >= LongVector.SPECIES_256.vectorByteSize() * 2) {
+            var sum0 = LongVector.zero(LongVector.SPECIES_256);
+            var sum1 = LongVector.zero(LongVector.SPECIES_256);
+            var sum2 = LongVector.zero(LongVector.SPECIES_256);
+            var sum3 = LongVector.zero(LongVector.SPECIES_256);
+            int limit = (int) ByteVector.SPECIES_256.loopBound(d.byteSize());
+            for (; i < limit; i += LongVector.SPECIES_256.vectorByteSize()) {
+                var vq0 = LongVector.fromMemorySegment(LongVector.SPECIES_256, q, i, NO);
+                var vq1 = LongVector.fromMemorySegment(LongVector.SPECIES_256, q, i + dSize, NO);
+                var vq2 = LongVector.fromMemorySegment(LongVector.SPECIES_256, q, i + dSize * 2, NO);
+                var vq3 = LongVector.fromMemorySegment(LongVector.SPECIES_256, q, i + dSize * 3, NO);
+                var vd = LongVector.fromMemorySegment(LongVector.SPECIES_256, d, i, NO);
+                sum0 = sum0.add(vq0.and(vd).lanewise(VectorOperators.BIT_COUNT));
+                sum1 = sum1.add(vq1.and(vd).lanewise(VectorOperators.BIT_COUNT));
+                sum2 = sum2.add(vq2.and(vd).lanewise(VectorOperators.BIT_COUNT));
+                sum3 = sum3.add(vq3.and(vd).lanewise(VectorOperators.BIT_COUNT));
+            }
+            subRet0 += sum0.reduceLanes(VectorOperators.ADD);
+            subRet1 += sum1.reduceLanes(VectorOperators.ADD);
+            subRet2 += sum2.reduceLanes(VectorOperators.ADD);
+            subRet3 += sum3.reduceLanes(VectorOperators.ADD);
+        }
+
+        if (dSize - i >= LongVector.SPECIES_128.vectorByteSize()) {
+            var sum0 = LongVector.zero(LongVector.SPECIES_128);
+            var sum1 = LongVector.zero(LongVector.SPECIES_128);
+            var sum2 = LongVector.zero(LongVector.SPECIES_128);
+            var sum3 = LongVector.zero(LongVector.SPECIES_128);
+            int limit = (int) ByteVector.SPECIES_128.loopBound(d.byteSize());
+            for (; i < limit; i += LongVector.SPECIES_128.vectorByteSize()) {
+                var vq0 = LongVector.fromMemorySegment(LongVector.SPECIES_128, q, i, NO);
+                var vq1 = LongVector.fromMemorySegment(LongVector.SPECIES_128, q, i + dSize, NO);
+                var vq2 = LongVector.fromMemorySegment(LongVector.SPECIES_128, q, i + dSize * 2, NO);
+                var vq3 = LongVector.fromMemorySegment(LongVector.SPECIES_128, q, i + dSize * 3, NO);
+                var vd = LongVector.fromMemorySegment(LongVector.SPECIES_128, d, i, NO);
+                sum0 = sum0.add(vq0.and(vd).lanewise(VectorOperators.BIT_COUNT));
+                sum1 = sum1.add(vq1.and(vd).lanewise(VectorOperators.BIT_COUNT));
+                sum2 = sum2.add(vq2.and(vd).lanewise(VectorOperators.BIT_COUNT));
+                sum3 = sum3.add(vq3.and(vd).lanewise(VectorOperators.BIT_COUNT));
+            }
+            subRet0 += sum0.reduceLanes(VectorOperators.ADD);
+            subRet1 += sum1.reduceLanes(VectorOperators.ADD);
+            subRet2 += sum2.reduceLanes(VectorOperators.ADD);
+            subRet3 += sum3.reduceLanes(VectorOperators.ADD);
+        }
+        // tail as bytes
+        for (; i < dSize; i++) {
+            final byte dByte = d.get(JAVA_BYTE, i);
+            subRet0 += Integer.bitCount((dByte & q.get(JAVA_BYTE, i)) & 0xFF);
+            subRet1 += Integer.bitCount((dByte & q.get(JAVA_BYTE, i + dSize)) & 0xFF);
+            subRet2 += Integer.bitCount((dByte & q.get(JAVA_BYTE, i + 2 * dSize)) & 0xFF);
+            subRet3 += Integer.bitCount((dByte & q.get(JAVA_BYTE, i + 3 * dSize)) & 0xFF);
+        }
+        return subRet0 + (subRet1 << 1) + (subRet2 << 2) + (subRet3 << 3);
+    }
 
     @Benchmark
     public long ipbb_byteArraysPanamaStrideAsLongUnrolledBench128() {
@@ -759,154 +834,123 @@ public class IpByteBinBenchmark {
     }
 
     public static long ipbb_byteArraysPanamaStrideAsLongUnrolled128(byte[] q, byte[] d) {
-        long ret = 0;
         long subRet0 = 0;
         long subRet1 = 0;
         long subRet2 = 0;
         long subRet3 = 0;
-        int limit = ByteVector.SPECIES_128.loopBound(d.length);
-        int r = 0;
+        int i = 0;
+
         LongVector sum0 = LongVector.zero(LongVector.SPECIES_128);
         LongVector sum1 = LongVector.zero(LongVector.SPECIES_128);
         LongVector sum2 = LongVector.zero(LongVector.SPECIES_128);
         LongVector sum3 = LongVector.zero(LongVector.SPECIES_128);
-
-        for (; r < limit; r += ByteVector.SPECIES_128.length()) {
-            LongVector vq0 = ByteVector.fromArray(ByteVector.SPECIES_128, q, r).reinterpretAsLongs();
-            LongVector vq1 = ByteVector.fromArray(ByteVector.SPECIES_128, q, r + d.length).reinterpretAsLongs();
-            LongVector vq2 = ByteVector.fromArray(ByteVector.SPECIES_128, q, r + d.length * 2).reinterpretAsLongs();
-            LongVector vq3 = ByteVector.fromArray(ByteVector.SPECIES_128, q, r + d.length * 3).reinterpretAsLongs();
-            LongVector vd = ByteVector.fromArray(ByteVector.SPECIES_128, d, r).reinterpretAsLongs();
-            LongVector vres0 = vq0.and(vd).lanewise(VectorOperators.BIT_COUNT);
-            LongVector vres1 = vq1.and(vd).lanewise(VectorOperators.BIT_COUNT);
-            LongVector vres2 = vq2.and(vd).lanewise(VectorOperators.BIT_COUNT);
-            LongVector vres3 = vq3.and(vd).lanewise(VectorOperators.BIT_COUNT);
-            sum0 = sum0.add(vres0);
-            sum1 = sum1.add(vres1);
-            sum2 = sum2.add(vres2);
-            sum3 = sum3.add(vres3);
+        int limit = ByteVector.SPECIES_128.loopBound(d.length);
+        for (; i < limit; i += ByteVector.SPECIES_128.length()) {
+            var vd = ByteVector.fromArray(ByteVector.SPECIES_128, d, i).reinterpretAsLongs();
+            var vq0 = ByteVector.fromArray(ByteVector.SPECIES_128, q, i).reinterpretAsLongs();
+            var vq1 = ByteVector.fromArray(ByteVector.SPECIES_128, q, i + d.length).reinterpretAsLongs();
+            var vq2 = ByteVector.fromArray(ByteVector.SPECIES_128, q, i + d.length * 2).reinterpretAsLongs();
+            var vq3 = ByteVector.fromArray(ByteVector.SPECIES_128, q, i + d.length * 3).reinterpretAsLongs();
+            sum0 = sum0.add(vq0.and(vd).lanewise(VectorOperators.BIT_COUNT));
+            sum1 = sum1.add(vq1.and(vd).lanewise(VectorOperators.BIT_COUNT));
+            sum2 = sum2.add(vq2.and(vd).lanewise(VectorOperators.BIT_COUNT));
+            sum3 = sum3.add(vq3.and(vd).lanewise(VectorOperators.BIT_COUNT));
         }
         subRet0 += sum0.reduceLanes(VectorOperators.ADD);
         subRet1 += sum1.reduceLanes(VectorOperators.ADD);
         subRet2 += sum2.reduceLanes(VectorOperators.ADD);
         subRet3 += sum3.reduceLanes(VectorOperators.ADD);
-        // tail as ints
-        for (; r < d.length-Integer.BYTES; r+=Integer.BYTES) {
-            subRet0 += Integer.bitCount((int) BitUtil.VH_NATIVE_INT.get(q, r) & (int) BitUtil.VH_NATIVE_INT.get(d, r));
-            subRet1 += Integer.bitCount((int) BitUtil.VH_NATIVE_INT.get(q, r + d.length) & (int) BitUtil.VH_NATIVE_INT.get(d, r));
-            subRet2 += Integer.bitCount((int) BitUtil.VH_NATIVE_INT.get(q, r + 2 * d.length) & (int) BitUtil.VH_NATIVE_INT.get(d, r));
-            subRet3 += Integer.bitCount((int) BitUtil.VH_NATIVE_INT.get(q, r + 3 * d.length) & (int) BitUtil.VH_NATIVE_INT.get(d, r));
-        }
         // tail as bytes
-        for (; r < d.length; r++) {
-            subRet0 += Integer.bitCount((q[r] & d[r]) & 0xFF);
-            subRet1 += Integer.bitCount((q[r + d.length] & d[r]) & 0xFF);
-            subRet2 += Integer.bitCount((q[r + 2 * d.length] & d[r]) & 0xFF);
-            subRet3 += Integer.bitCount((q[r + 3 * d.length] & d[r]) & 0xFF);
+        for (; i < d.length; i++) {
+            int dValue = d[i];
+            subRet0 += Integer.bitCount((dValue & q[i]) & 0xFF);
+            subRet1 += Integer.bitCount((dValue & q[i + d.length]) & 0xFF);
+            subRet2 += Integer.bitCount((dValue & q[i + 2 * d.length]) & 0xFF);
+            subRet3 += Integer.bitCount((dValue & q[i + 3 * d.length]) & 0xFF);
         }
-        ret += subRet0;
-        ret += subRet1 << 1;
-        ret += subRet2 << 2;
-        ret += subRet3 << 3;
-        return ret;
+        return subRet0 + (subRet1 << 1) + (subRet2 << 2) + (subRet3 << 3);
     }
 
     @Benchmark
-    public long ipbb_byteArraysPanamaStrideAsLongUnrolled256OnlyBench() {
-        return ipbb_byteArraysPanamaStrideAsLongUnrolled256Only(qBytes, dBytes);
+    public long ipbb_byteArraysPanamaStrideAsIntUnrolledBench128() {
+        return ipbb_byteArraysPanamaStrideAsIntUnrolled128(qBytes, dBytes);
     }
 
-    public static long ipbb_byteArraysPanamaStrideAsLongUnrolled256Only(byte[] q, byte[] d) {
-        long ret = 0;
+    public static long ipbb_byteArraysPanamaStrideAsIntUnrolled128(byte[] q, byte[] d) {
         long subRet0 = 0;
         long subRet1 = 0;
         long subRet2 = 0;
         long subRet3 = 0;
-        int limit = ByteVector.SPECIES_256.loopBound(d.length);
-        int r = 0;
-        LongVector sum0 = LongVector.zero(LongVector.SPECIES_256);
-        LongVector sum1 = LongVector.zero(LongVector.SPECIES_256);
-        LongVector sum2 = LongVector.zero(LongVector.SPECIES_256);
-        LongVector sum3 = LongVector.zero(LongVector.SPECIES_256);
+        int i = 0;
 
-        for (; r < limit; r += ByteVector.SPECIES_256.length()) {
-            LongVector vq0 = ByteVector.fromArray(ByteVector.SPECIES_256, q, r).reinterpretAsLongs();
-            LongVector vq1 = ByteVector.fromArray(ByteVector.SPECIES_256, q, r + d.length).reinterpretAsLongs();
-            LongVector vq2 = ByteVector.fromArray(ByteVector.SPECIES_256, q, r + d.length * 2).reinterpretAsLongs();
-            LongVector vq3 = ByteVector.fromArray(ByteVector.SPECIES_256, q, r + d.length * 3).reinterpretAsLongs();
-            LongVector vd = ByteVector.fromArray(ByteVector.SPECIES_256, d, r).reinterpretAsLongs();
-            LongVector vres0 = vq0.and(vd).lanewise(VectorOperators.BIT_COUNT);
-            LongVector vres1 = vq1.and(vd).lanewise(VectorOperators.BIT_COUNT);
-            LongVector vres2 = vq2.and(vd).lanewise(VectorOperators.BIT_COUNT);
-            LongVector vres3 = vq3.and(vd).lanewise(VectorOperators.BIT_COUNT);
-            sum0 = sum0.add(vres0);
-            sum1 = sum1.add(vres1);
-            sum2 = sum2.add(vres2);
-            sum3 = sum3.add(vres3);
+        var sum0 = IntVector.zero(IntVector.SPECIES_128);
+        var sum1 = IntVector.zero(IntVector.SPECIES_128);
+        var sum2 = IntVector.zero(IntVector.SPECIES_128);
+        var sum3 = IntVector.zero(IntVector.SPECIES_128);
+        int limit = ByteVector.SPECIES_128.loopBound(d.length);
+        for (; i < limit; i += ByteVector.SPECIES_128.length()) {
+            var vd = ByteVector.fromArray(BYTE_SPECIES_128, d, i).reinterpretAsInts();
+            var vq0 = ByteVector.fromArray(BYTE_SPECIES_128, q, i).reinterpretAsInts();
+            var vq1 = ByteVector.fromArray(BYTE_SPECIES_128, q, i + d.length).reinterpretAsInts();
+            var vq2 = ByteVector.fromArray(BYTE_SPECIES_128, q, i + d.length * 2).reinterpretAsInts();
+            var vq3 = ByteVector.fromArray(BYTE_SPECIES_128, q, i + d.length * 3).reinterpretAsInts();
+            sum0 = sum0.add(vd.and(vq0).lanewise(VectorOperators.BIT_COUNT));
+            sum1 = sum1.add(vd.and(vq1).lanewise(VectorOperators.BIT_COUNT));
+            sum2 = sum2.add(vd.and(vq2).lanewise(VectorOperators.BIT_COUNT));
+            sum3 = sum3.add(vd.and(vq3).lanewise(VectorOperators.BIT_COUNT));
         }
         subRet0 += sum0.reduceLanes(VectorOperators.ADD);
         subRet1 += sum1.reduceLanes(VectorOperators.ADD);
         subRet2 += sum2.reduceLanes(VectorOperators.ADD);
         subRet3 += sum3.reduceLanes(VectorOperators.ADD);
-        // tail as ints
-        for (; r < d.length-Integer.BYTES; r+=Integer.BYTES) {
-            subRet0 += Integer.bitCount((int) BitUtil.VH_NATIVE_INT.get(q, r) & (int) BitUtil.VH_NATIVE_INT.get(d, r));
-            subRet1 += Integer.bitCount((int) BitUtil.VH_NATIVE_INT.get(q, r + d.length) & (int) BitUtil.VH_NATIVE_INT.get(d, r));
-            subRet2 += Integer.bitCount((int) BitUtil.VH_NATIVE_INT.get(q, r + 2 * d.length) & (int) BitUtil.VH_NATIVE_INT.get(d, r));
-            subRet3 += Integer.bitCount((int) BitUtil.VH_NATIVE_INT.get(q, r + 3 * d.length) & (int) BitUtil.VH_NATIVE_INT.get(d, r));
-        }
         // tail as bytes
-        for (; r < d.length; r++) {
-            subRet0 += Integer.bitCount((q[r] & d[r]) & 0xFF);
-            subRet1 += Integer.bitCount((q[r + d.length] & d[r]) & 0xFF);
-            subRet2 += Integer.bitCount((q[r + 2 * d.length] & d[r]) & 0xFF);
-            subRet3 += Integer.bitCount((q[r + 3 * d.length] & d[r]) & 0xFF);
+        for (; i < d.length; i++) {
+            int dValue = d[i];
+            subRet0 += Integer.bitCount((dValue & q[i]) & 0xFF);
+            subRet1 += Integer.bitCount((dValue & q[i + d.length]) & 0xFF);
+            subRet2 += Integer.bitCount((dValue & q[i + 2 * d.length]) & 0xFF);
+            subRet3 += Integer.bitCount((dValue & q[i + 3 * d.length]) & 0xFF);
         }
-        ret += subRet0;
-        ret += subRet1 << 1;
-        ret += subRet2 << 2;
-        ret += subRet3 << 3;
-        return ret;
+        return subRet0 + (subRet1 << 1) + (subRet2 << 2) + (subRet3 << 3);
     }
 
     @Benchmark
-    public long ipbb_byteArraysPanamaStrideAsShortUnrolled128Bench() {
-        return ipbb_byteArraysPanamaStrideAsShortUnrolled128(qBytes, dBytes);
+    public long ipbb_memSegmentsPanamaStrideAsShortUnrolledBench128() {
+        return ipByteBinByte128(qSeg, dSeg);
     }
 
-    public static long ipbb_byteArraysPanamaStrideAsShortUnrolled128(byte[] q, byte[] d) {
-        long ret = 0;
+    // testing only
+    static long ipbb_memSegmentsPanamaStrideAsShortUnrolledBench128Sanity(byte[] q, byte[] d) {
+        return ipByteBinByte128(MemorySegment.ofArray(q), MemorySegment.ofArray(d));
+    }
+
+    public static long ipByteBinByte128(MemorySegment q, MemorySegment d) {
         long subRet0 = 0;
         long subRet1 = 0;
         long subRet2 = 0;
         long subRet3 = 0;
+        int i = 0;
 
-        final int limit = BYTE_128_SPECIES.loopBound(d.length);
-        // iterate in chunks of 256 bytes to ensure we don't overflow the accumulator (256bytes/16lanes=16itrs)
-        for (int j =0; j < limit; j += 256) {
-            ByteVector acc0 = ByteVector.zero(BYTE_128_SPECIES);
-            ByteVector acc1 = ByteVector.zero(BYTE_128_SPECIES);
-            ByteVector acc2 = ByteVector.zero(BYTE_128_SPECIES);
-            ByteVector acc3 = ByteVector.zero(BYTE_128_SPECIES);
-            int innerLimit = Math.min(limit - j, 256);
-            for (int k = 0; k < innerLimit; k += BYTE_128_SPECIES.length()) {
-                ByteVector vd = ByteVector.fromArray(BYTE_128_SPECIES, d, j + k);
-                ByteVector vq0 = ByteVector.fromArray(BYTE_128_SPECIES, q, j + k);
-                ByteVector vq1 = ByteVector.fromArray(BYTE_128_SPECIES, q, j + k + d.length);
-                ByteVector vq2 = ByteVector.fromArray(BYTE_128_SPECIES, q, j + k + 2 * d.length);
-                ByteVector vq3 = ByteVector.fromArray(BYTE_128_SPECIES, q, j + k + 3 * d.length);
-                ByteVector vres0 = vq0.and(vd);
-                ByteVector vres1 = vq1.and(vd);
-                ByteVector vres2 = vq2.and(vd);
-                ByteVector vres3 = vq3.and(vd);
-                vres0 = vres0.lanewise(VectorOperators.BIT_COUNT);
-                vres1 = vres1.lanewise(VectorOperators.BIT_COUNT);
-                vres2 = vres2.lanewise(VectorOperators.BIT_COUNT);
-                vres3 = vres3.lanewise(VectorOperators.BIT_COUNT);
-                acc0 = acc0.add(vres0);
-                acc1 = acc1.add(vres1);
-                acc2 = acc2.add(vres2);
-                acc3 = acc3.add(vres3);
+        // iterate in chunks of 256 bytes to ensure we don't overflow the accumulator
+        // (256bytes/16lanes=16itrs)
+        final int limit = (int) ByteVector.SPECIES_128.loopBound(d.byteSize());
+        final int dSize = (int) d.byteSize();
+        for (; i < limit; ) {
+            ByteVector acc0 = ByteVector.zero(ByteVector.SPECIES_128);
+            ByteVector acc1 = ByteVector.zero(ByteVector.SPECIES_128);
+            ByteVector acc2 = ByteVector.zero(ByteVector.SPECIES_128);
+            ByteVector acc3 = ByteVector.zero(ByteVector.SPECIES_128);
+            int innerLimit = i + Math.min(limit - i, 256);
+            for (; i < innerLimit; i += ByteVector.SPECIES_128.length()) {
+                var vd = ByteVector.fromMemorySegment(ByteVector.SPECIES_128, d, i, NO);
+                var vq0 = ByteVector.fromMemorySegment(ByteVector.SPECIES_128, q, i, NO);
+                var vq1 = ByteVector.fromMemorySegment(ByteVector.SPECIES_128, q, i + dSize, NO);
+                var vq2 = ByteVector.fromMemorySegment(ByteVector.SPECIES_128, q, i + 2 * dSize, NO);
+                var vq3 = ByteVector.fromMemorySegment(ByteVector.SPECIES_128, q, i + 3 * dSize, NO);
+                acc0 = acc0.add(vd.and(vq0).lanewise(VectorOperators.BIT_COUNT));
+                acc1 = acc1.add(vd.and(vq1).lanewise(VectorOperators.BIT_COUNT));
+                acc2 = acc2.add(vd.and(vq2).lanewise(VectorOperators.BIT_COUNT));
+                acc3 = acc3.add(vd.and(vq3).lanewise(VectorOperators.BIT_COUNT));
             }
             ShortVector sumShort1 = acc0.reinterpretAsShorts().and((short) 0xFF);
             ShortVector sumShort2 = acc0.reinterpretAsShorts().lanewise(VectorOperators.LSHR, 8);
@@ -925,17 +969,121 @@ public class IpByteBinBenchmark {
             subRet3 += sumShort1.add(sumShort2).reduceLanes(VectorOperators.ADD);
         }
         // tail as bytes
-        for (int r = limit; r < d.length; r++) {
-            subRet0 += Integer.bitCount((q[r] & d[r]) & 0xFF);
-            subRet1 += Integer.bitCount((q[r + d.length] & d[r]) & 0xFF);
-            subRet2 += Integer.bitCount((q[r + 2 * d.length] & d[r]) & 0xFF);
-            subRet3 += Integer.bitCount((q[r + 3 * d.length] & d[r]) & 0xFF);
+        for (; i < d.byteSize(); i++) {
+            byte dByte = d.get(JAVA_BYTE, i);
+            subRet0 += Integer.bitCount((dByte & q.get(JAVA_BYTE, i)) & 0xFF);
+            subRet1 += Integer.bitCount((dByte & q.get(JAVA_BYTE, i + d.byteSize())) & 0xFF);
+            subRet2 += Integer.bitCount((dByte & q.get(JAVA_BYTE, i + 2 * d.byteSize())) & 0xFF);
+            subRet3 += Integer.bitCount((dByte & q.get(JAVA_BYTE, i + 3 * d.byteSize())) & 0xFF);
         }
-        ret += subRet0;
-        ret += subRet1 << 1;
-        ret += subRet2 << 2;
-        ret += subRet3 << 3;
-        return ret;
+        return subRet0 + (subRet1 << 1) + (subRet2 << 2) + (subRet3 << 3);
+    }
+
+    @Benchmark
+    public long ipbb_byteArraysPanamaStrideAsLongUnrolled256OnlyBench() {
+        return ipbb_byteArraysPanamaStrideAsLongUnrolled256Only(qBytes, dBytes);
+    }
+
+    public static long ipbb_byteArraysPanamaStrideAsLongUnrolled256Only(byte[] q, byte[] d) {
+        long subRet0 = 0;
+        long subRet1 = 0;
+        long subRet2 = 0;
+        long subRet3 = 0;
+        int i = 0;
+        LongVector sum0 = LongVector.zero(LongVector.SPECIES_256);
+        LongVector sum1 = LongVector.zero(LongVector.SPECIES_256);
+        LongVector sum2 = LongVector.zero(LongVector.SPECIES_256);
+        LongVector sum3 = LongVector.zero(LongVector.SPECIES_256);
+
+        int limit = ByteVector.SPECIES_256.loopBound(d.length);
+        for (; i < limit; i += ByteVector.SPECIES_256.length()) {
+            LongVector vq0 = ByteVector.fromArray(ByteVector.SPECIES_256, q, i).reinterpretAsLongs();
+            LongVector vq1 = ByteVector.fromArray(ByteVector.SPECIES_256, q, i + d.length).reinterpretAsLongs();
+            LongVector vq2 = ByteVector.fromArray(ByteVector.SPECIES_256, q, i + d.length * 2).reinterpretAsLongs();
+            LongVector vq3 = ByteVector.fromArray(ByteVector.SPECIES_256, q, i + d.length * 3).reinterpretAsLongs();
+            LongVector vd = ByteVector.fromArray(ByteVector.SPECIES_256, d, i).reinterpretAsLongs();
+            LongVector vres0 = vq0.and(vd).lanewise(VectorOperators.BIT_COUNT);
+            LongVector vres1 = vq1.and(vd).lanewise(VectorOperators.BIT_COUNT);
+            LongVector vres2 = vq2.and(vd).lanewise(VectorOperators.BIT_COUNT);
+            LongVector vres3 = vq3.and(vd).lanewise(VectorOperators.BIT_COUNT);
+            sum0 = sum0.add(vres0);
+            sum1 = sum1.add(vres1);
+            sum2 = sum2.add(vres2);
+            sum3 = sum3.add(vres3);
+        }
+        subRet0 += sum0.reduceLanes(VectorOperators.ADD);
+        subRet1 += sum1.reduceLanes(VectorOperators.ADD);
+        subRet2 += sum2.reduceLanes(VectorOperators.ADD);
+        subRet3 += sum3.reduceLanes(VectorOperators.ADD);
+        // tail as bytes
+        for (; i < d.length; i++) {
+            subRet0 += Integer.bitCount((q[i] & d[i]) & 0xFF);
+            subRet1 += Integer.bitCount((q[i + d.length] & d[i]) & 0xFF);
+            subRet2 += Integer.bitCount((q[i + 2 * d.length] & d[i]) & 0xFF);
+            subRet3 += Integer.bitCount((q[i + 3 * d.length] & d[i]) & 0xFF);
+        }
+        return subRet0 + (subRet1 << 1) + (subRet2 << 2) + (subRet3 << 3);
+    }
+
+    @Benchmark
+    public long ipbb_byteArraysPanamaStrideAsShortUnrolled128Bench() {
+        return ipbb_byteArraysPanamaStrideAsShortUnrolled128(qBytes, dBytes);
+    }
+
+    //pByteBinBenchmark.ipbb_byteArraysPanamaStrideAsShortUnrolled128Bench      384  thrpt    5  100.354 ± 0.978  ops/us
+    //IpByteBinBenchmark.ipbb_byteArraysPanamaStrideAsShortUnrolled128Bench      768  thrpt    5   76.854 ± 0.577  ops/us
+    //IpByteBinBenchmark.ipbb_byteArraysPanamaStrideAsShortUnrolled128Bench     1024  thrpt    5   67.999 ± 0.399  ops/us
+    public static long ipbb_byteArraysPanamaStrideAsShortUnrolled128(byte[] q, byte[] d) {
+        long subRet0 = 0;
+        long subRet1 = 0;
+        long subRet2 = 0;
+        long subRet3 = 0;
+        int i = 0;
+
+        final int limit = BYTE_128_SPECIES.loopBound(d.length);
+        // iterate in chunks of 256 bytes to ensure we don't overflow the accumulator (256bytes/16lanes=16itrs)
+        while (i < limit) {
+            ByteVector acc0 = ByteVector.zero(BYTE_128_SPECIES);
+            ByteVector acc1 = ByteVector.zero(BYTE_128_SPECIES);
+            ByteVector acc2 = ByteVector.zero(BYTE_128_SPECIES);
+            ByteVector acc3 = ByteVector.zero(BYTE_128_SPECIES);
+            int innerLimit = i + Math.min(limit - i, 256);
+            for (; i < innerLimit; i += BYTE_128_SPECIES.length()) {
+                ByteVector vd = ByteVector.fromArray(BYTE_128_SPECIES, d, i);
+                ByteVector vq0 = ByteVector.fromArray(BYTE_128_SPECIES, q, i);
+                ByteVector vq1 = ByteVector.fromArray(BYTE_128_SPECIES, q, i + d.length);
+                ByteVector vq2 = ByteVector.fromArray(BYTE_128_SPECIES, q, i + 2 * d.length);
+                ByteVector vq3 = ByteVector.fromArray(BYTE_128_SPECIES, q, i + 3 * d.length);
+                acc0 = acc0.add(vd.and(vq0).lanewise(VectorOperators.BIT_COUNT));
+                acc1 = acc1.add(vd.and(vq1).lanewise(VectorOperators.BIT_COUNT));
+                acc2 = acc2.add(vd.and(vq2).lanewise(VectorOperators.BIT_COUNT));
+                acc3 = acc3.add(vd.and(vq3).lanewise(VectorOperators.BIT_COUNT));
+            }
+            ShortVector sumShort1 = acc0.reinterpretAsShorts().and((short) 0xFF);
+            ShortVector sumShort2 = acc0.reinterpretAsShorts().lanewise(VectorOperators.LSHR, 8);
+            subRet0 += sumShort1.add(sumShort2).reduceLanes(VectorOperators.ADD);
+
+            sumShort1 = acc1.reinterpretAsShorts().and((short) 0xFF);
+            sumShort2 = acc1.reinterpretAsShorts().lanewise(VectorOperators.LSHR, 8);
+            subRet1 += sumShort1.add(sumShort2).reduceLanes(VectorOperators.ADD);
+
+            sumShort1 = acc2.reinterpretAsShorts().and((short) 0xFF);
+            sumShort2 = acc2.reinterpretAsShorts().lanewise(VectorOperators.LSHR, 8);
+            subRet2 += sumShort1.add(sumShort2).reduceLanes(VectorOperators.ADD);
+
+            sumShort1 = acc3.reinterpretAsShorts().and((short) 0xFF);
+            sumShort2 = acc3.reinterpretAsShorts().lanewise(VectorOperators.LSHR, 8);
+            subRet3 += sumShort1.add(sumShort2).reduceLanes(VectorOperators.ADD);
+        }
+        // tail as bytes
+        for (; i < d.length; i++) {
+            byte dValue = d[i];
+            subRet0 += Integer.bitCount((dValue & q[i]) & 0xFF);
+            subRet1 += Integer.bitCount((dValue & q[i + d.length]) & 0xFF);
+            subRet2 += Integer.bitCount((dValue & q[i + 2 * d.length]) & 0xFF);
+            subRet3 += Integer.bitCount((dValue & q[i + 3 * d.length]) & 0xFF);
+        }
+        return subRet0 + (subRet1 << 1) + (subRet2 << 2) + (subRet3 << 3);
     }
 
     @Benchmark
