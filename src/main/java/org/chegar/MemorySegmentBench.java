@@ -14,6 +14,11 @@ import java.lang.foreign.Arena;
 import java.lang.foreign.MemorySegment;
 import java.lang.foreign.ValueLayout;
 import java.nio.ByteOrder;
+import java.nio.channels.FileChannel;
+import java.nio.file.Files;
+import java.nio.file.OpenOption;
+import java.nio.file.Path;
+import java.nio.file.StandardOpenOption;
 import java.util.concurrent.TimeUnit;
 
 @BenchmarkMode(Mode.AverageTime)
@@ -32,10 +37,17 @@ public class MemorySegmentBench {
     int offset;
 
     @Setup
-    public void setup() {
+    public void setup() throws Exception {
         arena = Arena.ofConfined();
-        var segment = arena.allocate(100);
-        indexInput = MemorySegmentIndexInput.newInstance(segment);
+        MemorySegment segment;
+        Path path = Path.of("some.file");
+        try (var channel = FileChannel.open(path, StandardOpenOption.CREATE_NEW)) {
+            Files.write(path, new byte[100]);
+        }
+        try (var channel = FileChannel.open(path, StandardOpenOption.READ)) {
+            segment = channel.map(FileChannel.MapMode.READ_ONLY, 0, 100, arena);
+            indexInput = MemorySegmentIndexInput.newInstance(segment);
+        }
         offset = 12; // just some random offset
 
         // pollution
