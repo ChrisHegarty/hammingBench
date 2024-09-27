@@ -50,7 +50,7 @@
         <!--
             Java source/target to use for compilation.
           -->
-        <javac.target>21</javac.target>
+        <javac.target>22</javac.target>
 
         <!--
             Name of the benchmark Uber-JAR to generate.
@@ -69,7 +69,7 @@
                     <source>${javac.target}</source>
                     <target>${javac.target}</target>
                     <compilerArgs>
-                        <compilerArg>--enable-preview</compilerArg>
+                        <!-- <compilerArg> DASH-enable-preview</compilerArg> -->
                         <compilerArg>--add-modules=jdk.incubator.vector</compilerArg>
                     </compilerArgs>
                 </configuration>
@@ -78,7 +78,8 @@
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>3.1.2</version>
                 <configuration>
-                    <!-- <argLine>-XX:MaxVectorSize=16</argLine> -->
+                    <!-- <argLine> -XX:MaxVectorSize=16</argLine> -->
+                    <!-- <argLine> DASH-enable-preview DASH-add-modules=jdk.incubator.vector</argLine> -->
                     <argLine>--enable-preview --add-modules=jdk.incubator.vector</argLine>
                 </configuration>
             </plugin>
